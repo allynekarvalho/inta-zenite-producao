@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inta Zenite Produção</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e3a6e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg: #f6f3ec;
+    --card: #ffffff;
+    --ink: #1c2333;
+    --muted: #6b6f7d;
+    --royal: #1e3a6e;
+    --royal-dark: #142a53;
+    --gold: #a1783f;
+    --border: #e2dccd;
+    --danger: #9c3b3b;
+    --ok: #2e7d4f;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161c; --card: #1d212b; --ink: #f1efe9; --muted: #9aa0ab;
+      --royal: #4f74b8; --royal-dark: #3a5a95; --gold: #c9a468; --border: #2d323f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161c; --card: #1d212b; --ink: #f1efe9; --muted: #9aa0ab;
+    --royal: #4f74b8; --royal-dark: #3a5a95; --gold: #c9a468; --border: #2d323f;
+  }
+  html{height:100%;}
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:640px;margin:0 auto;padding:20px 16px 96px;}
+  .eyebrow{font-size:12px;color:var(--gold);letter-spacing:.04em;text-transform:uppercase;margin:0 0 4px;}
+  h1{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:22px;margin:0 0 4px;}
+  h2{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:18px;margin:0 0 12px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px;}
+  .muted{color:var(--muted);font-size:13px;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--royal);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer;}
+  .btn:active{background:var(--royal-dark);}
+  .btn.gold{background:var(--gold);}
+  .btn.ghost{background:transparent;color:var(--royal);border:1px solid var(--border);}
+  .btn.danger{background:var(--danger);}
+  .btn.sm{padding:8px 12px;font-size:13px;border-radius:8px;}
+  .btn.block{width:100%;}
+  input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:11px 12px;font-size:15px;color:var(--ink);font-family:inherit;}
+  label{font-size:13px;color:var(--muted);display:block;margin:10px 0 4px;}
+  .row{display:flex;gap:8px;}
+  .row > *{flex:1;}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;letter-spacing:.02em;}
+  .pill.aguardando{background:#e7e2d3;color:#6b5f3f;}
+  .pill.em_producao{background:#dde6f5;color:var(--royal);}
+  .pill.pronto{background:#d9ecdf;color:var(--ok);}
+  .pill.entregue{background:#e2dccd;color:var(--muted);}
+  .pill.urgente{background:#f3d9d9;color:var(--danger);}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+  .navbottom{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);display:flex;padding:6px env(safe-area-inset-left,0) calc(6px + env(safe-area-inset-bottom,0)) env(safe-area-inset-right,0);z-index:50;}
+  .navbottom button{flex:1;background:none;border:none;color:var(--muted);font-size:11px;font-family:inherit;padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;}
+  .navbottom button.active{color:var(--royal);font-weight:700;}
+  .navbottom svg{width:20px;height:20px;}
+  .item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;}
+  .item:last-child{border-bottom:none;}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:flex-end;justify-content:center;}
+  .modal{background:var(--card);width:100%;max-width:640px;max-height:90vh;overflow-y:auto;border-radius:18px 18px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom,0));}
+  .modal h2{display:flex;justify-content:space-between;align-items:center;}
+  .close{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1;}
+  .fab{position:fixed;bottom:76px;right:16px;background:var(--gold);color:#fff;border:none;border-radius:50%;width:54px;height:54px;font-size:26px;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:40;cursor:pointer;}
+  .center{text-align:center;}
+  .spinner{border:3px solid var(--border);border-top-color:var(--royal);border-radius:50%;width:28px;height:28px;animation:spin .8s linear infinite;margin:24px auto;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .segmented{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;margin-bottom:14px;}
+  .segmented button{flex:1;border:none;background:none;padding:8px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;}
+  .segmented button.active{background:var(--card);color:var(--royal);}
+  .stat{display:flex;gap:10px;}
+  .stat .card{flex:1;text-align:center;padding:12px;}
+  .stat .num{font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:600;}
+  a{color:var(--royal);}
+  .foto-thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--border);}
+  .checkline{display:flex;align-items:center;gap:10px;}
+  .checkline input[type=checkbox]{width:auto;}
+  .error{color:var(--danger);font-size:13px;margin-top:6px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ---------- CONFIG ----------
+const SUPABASE_URL = "https://ldkgwtdlajoodwsattex.supabase.co";
+const SUPABASE_KEY = "sb_publishable_HUFpcJLnKSeQ3EiXXco0iw_PXv73xgO";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const STATUS_LABEL = {aguardando:'Aguardando', em_producao:'Em produção', pronto:'Pronto', entregue:'Entregue'};
+const STATUS_NEXT = {aguardando:'em_producao', em_producao:'pronto', pronto:'entregue'};
+
+let state = {
+  session: null,
+  tab: 'hoje',
+  hojeData: new Date().toISOString().slice(0,10),
+  pessoaTipo: 'costureiras',
+};
+
+const app = document.getElementById('app');
+
+function fmtDate(d){
+  if(!d) return '';
+  const [y,m,day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function money(v){ return (v==null?0:Number(v)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+
+// ---------- BOOT ----------
+async function boot(){
+  const { data } = await sb.auth.getSession();
+  state.session = data.session;
+  sb.auth.onAuthStateChange((_event, session) => {
+    state.session = session;
+    render();
+  });
+  render();
+}
+boot();
+
+function render(){
+  if(!state.session){ renderLogin(); return; }
+  renderApp();
+}
+
+// ---------- LOGIN ----------
+function renderLogin(){
+  app.innerHTML = `
+    <div class="wrap" style="padding-top:70px;">
+      <div class="center" style="margin-bottom:30px;">
+        <p class="eyebrow">Inta Zenite</p>
+        <h1 style="font-size:28px;">Produção</h1>
+        <p class="muted">Controle de produção dos paramentos</p>
+      </div>
+      <div class="card">
+        <label>Seu e-mail</label>
+        <input id="login-email" type="email" placeholder="allynekarvalho@hotmail.com" autocomplete="email">
+        <button class="btn block" style="margin-top:14px;" onclick="doLogin()">Enviar link de acesso</button>
+        <p id="login-msg" class="muted" style="margin-top:10px;"></p>
+      </div>
+    </div>`;
+}
+
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const msg = document.getElementById('login-msg');
+  if(!email){ msg.textContent = 'Digite seu e-mail.'; msg.className='error'; return; }
+  msg.textContent = 'Enviando...'; msg.className='muted';
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+  if(error){ msg.textContent = 'Erro: ' + error.message; msg.className='error'; return; }
+  msg.textContent = 'Link enviado! Abra seu e-mail e toque no link pra entrar.';
+  msg.className='muted';
+}
+
+// ---------- APP SHELL ----------
+function renderApp(){
+  app.innerHTML = `
+    <div class="wrap">
+      <div class="topbar">
+        <div>
+          <p class="eyebrow">Inta Zenite</p>
+          <h1>Produção</h1>
+        </div>
+        <button class="btn ghost sm" onclick="sb.auth.signOut()">Sair</button>
+      </div>
+      <div id="content"></div>
+    </div>
+    <div class="navbottom">
+      ${navBtn('hoje','Hoje')}
+      ${navBtn('pedidos','Pedidos')}
+      ${navBtn('costureiras','Equipe')}
+      ${navBtn('materiais','Materiais')}
+      ${navBtn('relatorio','Relatório')}
+    </div>
+  `;
+  loadTab();
+}
+function navBtn(id,label){
+  return `<button class="${state.tab===id?'active':''}" onclick="switchTab('${id}')">${label}</button>`;
+}
+function switchTab(id){ state.tab = id; renderApp(); }
+
+function loadTab(){
+  const c = document.getElementById('content');
+  c.innerHTML = `<div class="spinner"></div>`;
+  if(state.tab==='hoje') renderHoje();
+  else if(state.tab==='pedidos') renderPedidos();
+  else if(state.tab==='costureiras') renderEquipe();
+  else if(state.tab==='materiais') renderMateriais();
+  else if(state.tab==='relatorio') renderRelatorio();
+}
+
+// ================= HOJE =================
+async function renderHoje(){
+  const c = document.getElementById('content');
+  const dia = state.hojeData;
+  const { data: pecas, error } = await sb.from('pecas')
+    .select('*, fichas_tecnicas(nome), pedidos(numero, prazo, urgente, clientes(nome)), costureiras(nome), faccionistas(nome)')
+    .eq('dia_producao', dia)
+    .order('criado_em');
+
+  let html = `
+    <div class="row" style="margin-bottom:14px;">
+      <button class="btn ghost sm" onclick="mudarDia(-1)">‹ Anterior</button>
+      <input type="date" value="${dia}" onchange="state.hojeData=this.value; loadTab();" style="text-align:center;">
+      <button class="btn ghost sm" onclick="mudarDia(1)">Próximo ›</button>
+    </div>`;
+
+  if(error){ html += `<p class="error">Erro ao carregar: ${error.message}</p>`; c.innerHTML = html; return; }
+  if(!pecas || pecas.length===0){
+    html += `<div class="card center muted">Nada programado para ${fmtDate(dia)}.</div>`;
+    c.innerHTML = html; return;
+  }
+
+  // ordenar urgentes/prazo vencendo no topo
+  pecas.sort((a,b) => {
+    const au = a.pedidos?.urgente ? 0 : 1, bu = b.pedidos?.urgente ? 0 : 1;
+    return au - bu;
+  });
+
+  html += pecas.map(p => {
+    const urgente = p.pedidos?.urgente;
+    const prazo = p.pedidos?.prazo;
+    const venceLogo = prazo && (new Date(prazo) - new Date(dia))/86400000 <= 2;
+    const quem = p.costureiras?.nome || p.faccionistas?.nome || '—';
+    return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div>
+          <strong>${p.fichas_tecnicas?.nome || 'Peça'}</strong> ×${p.quantidade}
+          <div class="muted">${p.pedidos?.clientes?.nome || ''} · Pedido #${p.pedidos?.numero || ''}</div>
+          <div class="muted">Responsável: ${quem}</div>
+        </div>
+        <div style="text-align:right;">
+          ${urgente ? '<span class="pill urgente">Urgente</span>' : ''}
+          ${venceLogo ? `<div class="muted" style="color:var(--danger);font-size:11px;">Prazo ${fmtDate(prazo)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+        <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span>
+        ${STATUS_NEXT[p.status] ? `<button class="btn sm" onclick="avancarStatus('${p.id}','${STATUS_NEXT[p.status]}')">Marcar ${STATUS_LABEL[STATUS_NEXT[p.status]]}</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  c.innerHTML = html;
+}
+function mudarDia(delta){
+  const d = new Date(state.hojeData + 'T12:00:00');
+  d.setDate(d.getDate()+delta);
+  state.hojeData = d.toISOString().slice(0,10);
+  loadTab();
+}
+async function avancarStatus(id, novo){
+  const patch = { status: novo };
+  if(novo === 'pronto') patch.data_pronto = todayISO();
+  const { error } = await sb.from('pecas').update(patch).eq('id', id);
+  if(error){ alert('Erro: ' + error.message); return; }
+  loadTab();
+}
+
+// ================= PEDIDOS =================
+async function renderPedidos(){
+  const c = document.getElementById('content');
+  const { data: pedidos, error } = await sb.from('pedidos')
+    .select('*, clientes(nome), pecas(id,status)')
+    .order('criado_em', { ascending: false });
+
+  let html = `<button class="btn block" onclick="abrirNovoPedido()">+ Novo pedido</button><div style="height:14px;"></div>`;
+  if(error){ html += `<p class="error">${error.message}</p>`; c.innerHTML = html; return; }
+  if(!pedidos || pedidos.length===0){ html += `<div class="card center muted">Nenhum pedido ainda.</div>`; c.innerHTML = html; return; }
+
+  html += pedidos.map(p => {
+    const total = p.pecas?.length || 0;
+    const prontos = p.pecas?.filter(x=>x.status==='pronto'||x.status==='entregue').length || 0;
+    return `
+    <div class="card" onclick="abrirPedido('${p.id}')" style="cursor:pointer;">
+      <div style="display:flex;justify-content:space-between;">
+        <strong>#${p.numero} · ${p.clientes?.nome || ''}</strong>
+        ${p.urgente ? '<span class="pill urgente">Urgente</span>' : ''}
+      </div>
+      <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas</div>
+    </div>`;
+  }).join('');
+  c.innerHTML = html;
+}
+
+async function abrirNovoPedido(){
+  const { data: clientes } = await sb.from('clientes').select('*').order('nome');
+  showModal(`
+    <h2>Novo pedido <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Cliente</label>
+    <select id="np-cliente">
+      <option value="">— novo cliente —</option>
+      ${(clientes||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}
+    </select>
+    <div id="np-novo-cliente" style="margin-top:8px;">
+      <label>Nome do cliente</label>
+      <input id="np-cliente-nome" placeholder="Nome do Irmão ou da Loja">
+      <label>Tipo</label>
+      <select id="np-cliente-tipo"><option value="irmao">Irmão</option><option value="loja">Loja</option></select>
+    </div>
+    <label>Prazo</label>
+    <input type="date" id="np-prazo">
+    <label class="checkline" style="margin-top:12px;"><input type="checkbox" id="np-urgente"> Urgente</label>
+    <label>Observações</label>
+    <textarea id="np-obs" rows="2"></textarea>
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarNovoPedido()">Criar pedido</button>
+    <p id="np-msg" class="error"></p>
+  `);
+  document.getElementById('np-cliente').onchange = e => {
+    document.getElementById('np-novo-cliente').style.display = e.target.value ? 'none' : 'block';
+  };
+}
+
+async function salvarNovoPedido(){
+  const msg = document.getElementById('np-msg');
+  let clienteId = document.getElementById('np-cliente').value;
+  if(!clienteId){
+    const nome = document.getElementById('np-cliente-nome').value.trim();
+    if(!nome){ msg.textContent = 'Informe o nome do cliente.'; return; }
+    const tipo = document.getElementById('np-cliente-tipo').value;
+    const { data, error } = await sb.from('clientes').insert({ nome, tipo }).select().single();
+    if(error){ msg.textContent = error.message; return; }
+    clienteId = data.id;
+  }
+  const prazo = document.getElementById('np-prazo').value || null;
+  const urgente = document.getElementById('np-urgente').checked;
+  const observacao = document.getElementById('np-obs').value;
+  const { data, error } = await sb.from('pedidos').insert({ cliente_id: clienteId, prazo, urgente, observacao }).select().single();
+  if(error){ msg.textContent = error.message; return; }
+  closeModal();
+  await abrirPedido(data.id);
+}
+
+async function abrirPedido(id){
+  const { data: pedido } = await sb.from('pedidos').select('*, clientes(nome,telefone)').eq('id', id).single();
+  const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas(nome)').eq('pedido_id', id).order('criado_em');
+  showModal(`
+    <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <p class="muted">${pedido.clientes?.nome || ''} · Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
+    <h2 style="font-size:15px;margin-top:18px;">Peças</h2>
+    <div id="pedido-pecas">
+      ${(pecas||[]).map(p=>`
+        <div class="item">
+          <div>
+            <strong>${p.fichas_tecnicas?.nome||'Peça'}</strong> ×${p.quantidade}
+            <div class="muted">${p.dia_producao?('Produção: '+fmtDate(p.dia_producao)):'Sem data definida'} · <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span></div>
+          </div>
+          <button class="btn ghost sm" onclick="closeModal(); editarPeca('${p.id}')">Editar</button>
+        </div>
+      `).join('') || '<p class="muted">Nenhuma peça ainda.</p>'}
+    </div>
+    <button class="btn block" style="margin-top:14px;" onclick="adicionarPeca('${id}')">+ Adicionar peça</button>
+  `);
+}
+
+async function adicionarPeca(pedidoId){
+  const { data: fichas } = await sb.from('fichas_tecnicas').select('*').eq('ativo', true).order('nome');
+  const { data: costureiras } = await sb.from('costureiras').select('*').eq('ativo', true).order('nome');
+  const { data: faccionistas } = await sb.from('faccionistas').select('*').eq('ativo', true).order('nome');
+  showModal(`
+    <h2>Nova peça <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>
+    <label>Tipo de peça</label>
+    <select id="pc-ficha">
+      <option value="">Selecione...</option>
+      ${(fichas||[]).map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
+    </select>
+    <p class="muted">Não achou o tipo? <a href="#" onclick="event.preventDefault(); novaFicha('${pedidoId}')">Cadastrar novo tipo de peça</a></p>
+    <label>Quantidade</label>
+    <input type="number" id="pc-qtd" value="1" min="1">
+    <label>Dia de produção</label>
+    <input type="date" id="pc-dia">
+    <label>Costureira</label>
+    <select id="pc-costureira"><option value="">—</option>${(costureiras||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+    <label>Faccionista</label>
+    <select id="pc-faccionista"><option value="">—</option>${(faccionistas||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarPeca('${pedidoId}')">Salvar peça</button>
+    <p id="pc-msg" class="error"></p>
+  `);
+}
+
+async function salvarPeca(pedidoId){
+  const msg = document.getElementById('pc-msg');
+  const ficha_id = document.getElementById('pc-ficha').value;
+  if(!ficha_id){ msg.textContent = 'Escolha o tipo de peça.'; return; }
+  const quantidade = Number(document.getElementById('pc-qtd').value) || 1;
+  const dia_producao = document.getElementById('pc-dia').value || null;
+  const costureira_id = document.getElementById('pc-costureira').value || null;
+  const faccionista_id = document.getElementById('pc-faccionista').value || null;
+
+  let valor_costureira = null, valor_faccionista = null;
+  if(costureira_id){
+    const { data } = await sb.from('costureira_valores').select('valor').eq('costureira_id', costureira_id).eq('ficha_id', ficha_id).maybeSingle();
+    valor_costureira = data?.valor ?? null;
+  }
+  if(faccionista_id){
+    const { data } = await sb.from('faccionista_valores').select('valor').eq('faccionista_id', faccionista_id).eq('ficha_id', ficha_id).maybeSingle();
+    valor_faccionista = data?.valor ?? null;
+  }
+
+  const { error } = await sb.from('pecas').insert({
+    pedido_id: pedidoId, ficha_id, quantidade, dia_producao, costureira_id, faccionista_id, valor_costureira, valor_faccionista
+  });
+  if(error){ msg.textContent = error.message; return; }
+  closeModal();
+  await abrirPedido(pedidoId);
+}
+
+async function novaFicha(pedidoId){
+  showModal(`
+    <h2>Novo tipo de peça <button class="close" onclick="closeModal(); adicionarPeca('${pedidoId}')">&times;</button></h2>
+    <label>Nome (ex: Avental Marechal, Punho VM REAA GOEMT)</label>
+    <input id="nf-nome">
+    <label>Unidade de produção</label>
+    <input id="nf-unidade" placeholder="peça, par, avental...">
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarFicha('${pedidoId}')">Salvar</button>
+    <p id="nf-msg" class="error"></p>
+  `);
+}
+async function salvarFicha(pedidoId){
+  const nome = document.getElementById('nf-nome').value.trim();
+  const unidade_producao = document.getElementById('nf-unidade').value.trim() || 'peça';
+  const msg = document.getElementById('nf-msg');
+  if(!nome){ msg.textContent = 'Informe o nome.'; return; }
+  const { error } = await sb.from('fichas_tecnicas').insert({ nome, unidade_producao });
+  if(error){ msg.textContent = error.message; return; }
+  closeModal();
+  await adicionarPeca(pedidoId);
+}
+
+async function editarPeca(id){
+  const { data: p } = await sb.from('pecas').select('*, fichas_tecnicas(nome)').eq('id', id).single();
+  const { data: costureiras } = await sb.from('costureiras').select('*').eq('ativo', true).order('nome');
+  const { data: faccionistas } = await sb.from('faccionistas').select('*').eq('ativo', true).order('nome');
+  showModal(`
+    <h2>${p.fichas_tecnicas?.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Quantidade</label>
+    <input type="number" id="ep-qtd" value="${p.quantidade}" min="1">
+    <label>Dia de produção</label>
+    <input type="date" id="ep-dia" value="${p.dia_producao||''}">
+    <label>Status</label>
+    <select id="ep-status">
+      ${Object.keys(STATUS_LABEL).map(s=>`<option value="${s}" ${s===p.status?'selected':''}>${STATUS_LABEL[s]}</option>`).join('')}
+    </select>
+    <label>Costureira</label>
+    <select id="ep-costureira"><option value="">—</option>${(costureiras||[]).map(c=>`<option value="${c.id}" ${c.id===p.costureira_id?'selected':''}>${c.nome}</option>`).join('')}</select>
+    <label>Faccionista</label>
+    <select id="ep-faccionista"><option value="">—</option>${(faccionistas||[]).map(c=>`<option value="${c.id}" ${c.id===p.faccionista_id?'selected':''}>${c.nome}</option>`).join('')}</select>
+    <div class="row" style="margin-top:16px;">
+      <button class="btn ghost" onclick="excluirPeca('${id}')">Excluir</button>
+      <button class="btn gold" onclick="salvarEdicaoPeca('${id}')">Salvar</button>
+    </div>
+    <p id="ep-msg" class="error"></p>
+  `);
+}
+async function salvarEdicaoPeca(id){
+  const patch = {
+    quantidade: Number(document.getElementById('ep-qtd').value) || 1,
+    dia_producao: document.getElementById('ep-dia').value || null,
+    status: document.getElementById('ep-status').value,
+    costureira_id: document.getElementById('ep-costureira').value || null,
+    faccionista_id: document.getElementById('ep-faccionista').value || null,
+  };
+  const { error } = await sb.from('pecas').update(patch).eq('id', id);
+  if(error){ document.getElementById('ep-msg').textContent = error.message; return; }
+  closeModal();
+  loadTab();
+}
+async function excluirPeca(id){
+  if(!confirm('Excluir essa peça? O estoque usado será devolvido automaticamente.')) return;
+  const { error } = await sb.from('pecas').delete().eq('id', id);
+  if(error){ alert(error.message); return; }
+  closeModal();
+  loadTab();
+}
+
+// ================= EQUIPE (Costureiras/Faccionistas) =================
+async function renderEquipe(){
+  const c = document.getElementById('content');
+  const tabela = state.pessoaTipo; // costureiras | faccionistas
+  const { data: pessoas, error } = await sb.from(tabela).select('*').order('nome');
+  let html = `
+    <div class="segmented">
+      <button class="${tabela==='costureiras'?'active':''}" onclick="state.pessoaTipo='costureiras';loadTab();">Costureiras</button>
+      <button class="${tabela==='faccionistas'?'active':''}" onclick="state.pessoaTipo='faccionistas';loadTab();">Faccionistas</button>
+    </div>
+    <button class="btn block" onclick="novaPessoa()">+ Nova ${tabela==='costureiras'?'costureira':'faccionista'}</button>
+    <div style="height:14px;"></div>`;
+  if(error){ html += `<p class="error">${error.message}</p>`; c.innerHTML = html; return; }
+  html += (pessoas||[]).map(p => `
+    <div class="card" onclick="abrirPessoa('${p.id}')" style="cursor:pointer;">
+      <strong>${p.nome}</strong> ${!p.ativo?'<span class="pill">Inativa</span>':''}
+      <div class="muted">${p.telefone||''}</div>
+    </div>`).join('') || '<div class="card center muted">Nenhuma cadastrada ainda.</div>';
+  c.innerHTML = html;
+}
+function novaPessoa(){
+  const tabela = state.pessoaTipo;
+  showModal(`
+    <h2>Nova ${tabela==='costureiras'?'costureira':'faccionista'} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Nome</label><input id="pp-nome">
+    <label>Telefone / WhatsApp</label><input id="pp-tel">
+    <label>Observações</label><textarea id="pp-obs" rows="2"></textarea>
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarPessoa()">Salvar</button>
+    <p id="pp-msg" class="error"></p>
+  `);
+}
+async function salvarPessoa(){
+  const tabela = state.pessoaTipo;
+  const nome = document.getElementById('pp-nome').value.trim();
+  const msg = document.getElementById('pp-msg');
+  if(!nome){ msg.textContent='Informe o nome.'; return; }
+  const telefone = document.getElementById('pp-tel').value;
+  const observacao = document.getElementById('pp-obs').value;
+  const { error } = await sb.from(tabela).insert({ nome, telefone, observacao });
+  if(error){ msg.textContent = error.message; return; }
+  closeModal(); loadTab();
+}
+async function abrirPessoa(id){
+  const tabela = state.pessoaTipo;
+  const valoresTabela = tabela==='costureiras' ? 'costureira_valores' : 'faccionista_valores';
+  const fk = tabela==='costureiras' ? 'costureira_id' : 'faccionista_id';
+  const { data: pessoa } = await sb.from(tabela).select('*').eq('id', id).single();
+  const { data: valores } = await sb.from(valoresTabela).select('*, fichas_tecnicas(nome)').eq(fk, id);
+  const { data: fichas } = await sb.from('fichas_tecnicas').select('*').eq('ativo', true).order('nome');
+  showModal(`
+    <h2>${pessoa.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Nome</label><input id="ep2-nome" value="${pessoa.nome}">
+    <label>Telefone</label><input id="ep2-tel" value="${pessoa.telefone||''}">
+    <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="ep2-ativo" ${pessoa.ativo?'checked':''}> Ativa</label>
+    <button class="btn sm" style="margin-top:10px;" onclick="salvarEdicaoPessoa('${id}')">Salvar dados</button>
+
+    <h2 style="font-size:15px;margin-top:20px;">Valores por peça</h2>
+    <div id="valores-lista">
+      ${(valores||[]).map(v=>`
+        <div class="item">
+          <span>${v.fichas_tecnicas?.nome}</span>
+          <span>${money(v.valor)}</span>
+        </div>`).join('') || '<p class="muted">Nenhum valor definido ainda.</p>'}
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <select id="nv-ficha">
+        <option value="">Tipo de peça...</option>
+        ${(fichas||[]).map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
+      </select>
+      <input id="nv-valor" type="number" step="0.01" placeholder="Valor R$">
+    </div>
+    <button class="btn sm gold" style="margin-top:8px;" onclick="salvarValor('${id}','${valoresTabela}','${fk}')">Adicionar valor</button>
+    <p id="ep2-msg" class="error"></p>
+  `);
+}
+async function salvarEdicaoPessoa(id){
+  const tabela = state.pessoaTipo;
+  const patch = {
+    nome: document.getElementById('ep2-nome').value.trim(),
+    telefone: document.getElementById('ep2-tel').value,
+    ativo: document.getElementById('ep2-ativo').checked,
+  };
+  const { error } = await sb.from(tabela).update(patch).eq('id', id);
+  if(error){ document.getElementById('ep2-msg').textContent = error.message; return; }
+  closeModal(); loadTab();
+}
+async function salvarValor(id, valoresTabela, fk){
+  const ficha_id = document.getElementById('nv-ficha').value;
+  const valor = Number(document.getElementById('nv-valor').value);
+  const msg = document.getElementById('ep2-msg');
+  if(!ficha_id || !valor){ msg.textContent = 'Preencha o tipo de peça e o valor.'; return; }
+  const payload = { ficha_id, valor }; payload[fk] = id;
+  const { error } = await sb.from(valoresTabela).upsert(payload, { onConflict: `${fk},ficha_id` });
+  if(error){ msg.textContent = error.message; return; }
+  closeModal(); abrirPessoa(id);
+}
+
+// ================= MATERIAIS =================
+async function renderMateriais(){
+  const c = document.getElementById('content');
+  const { data: materiais, error } = await sb.from('materiais').select('*, fornecedores(nome)').order('nome');
+  let html = `<button class="btn block" onclick="novoMaterial()">+ Novo material</button><div style="height:14px;"></div>`;
+  if(error){ html += `<p class="error">${error.message}</p>`; c.innerHTML = html; return; }
+  html += (materiais||[]).map(m => {
+    const baixo = Number(m.estoque_atual) <= Number(m.estoque_minimo);
+    return `
+    <div class="card" onclick="editarMaterial('${m.id}')" style="cursor:pointer;">
+      <div style="display:flex;justify-content:space-between;">
+        <strong>${m.nome}</strong>
+        ${baixo ? '<span class="pill urgente">Estoque baixo</span>' : ''}
+      </div>
+      <div class="muted">${m.fornecedores?.nome || 'Sem fornecedor'} ${m.referencia?('· ref '+m.referencia):''}</div>
+      <div class="muted">Estoque: ${m.estoque_atual} ${m.unidade}</div>
+    </div>`;
+  }).join('') || '<div class="card center muted">Nenhum material cadastrado.</div>';
+  c.innerHTML = html;
+}
+async function novoMaterial(){
+  const { data: fornecedores } = await sb.from('fornecedores').select('*').order('nome');
+  showModal(`
+    <h2>Novo material <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Nome</label><input id="nm-nome" placeholder="Ex: Fita gorgurão 5cm cor 92">
+    <label>Unidade</label>
+    <select id="nm-unidade"><option value="cm">cm</option><option value="m">m</option><option value="peça">peça</option></select>
+    <label>Fornecedor</label>
+    <select id="nm-fornecedor">
+      <option value="">— novo fornecedor —</option>
+      ${(fornecedores||[]).map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
+    </select>
+    <input id="nm-fornecedor-nome" placeholder="Nome do fornecedor" style="margin-top:6px;">
+    <label>Referência com o fornecedor</label><input id="nm-ref">
+    <label>Estoque atual</label><input id="nm-estoque" type="number" step="0.01" value="0">
+    <label>Estoque mínimo (alerta)</label><input id="nm-minimo" type="number" step="0.01" value="0">
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarMaterial()">Salvar</button>
+    <p id="nm-msg" class="error"></p>
+  `);
+}
+async function salvarMaterial(){
+  const msg = document.getElementById('nm-msg');
+  const nome = document.getElementById('nm-nome').value.trim();
+  if(!nome){ msg.textContent='Informe o nome.'; return; }
+  let fornecedor_id = document.getElementById('nm-fornecedor').value;
+  const fornecedorNome = document.getElementById('nm-fornecedor-nome').value.trim();
+  if(!fornecedor_id && fornecedorNome){
+    const { data, error } = await sb.from('fornecedores').insert({ nome: fornecedorNome }).select().single();
+    if(error){ msg.textContent = error.message; return; }
+    fornecedor_id = data.id;
+  }
+  const payload = {
+    nome,
+    unidade: document.getElementById('nm-unidade').value,
+    fornecedor_id: fornecedor_id || null,
+    referencia: document.getElementById('nm-ref').value,
+    estoque_atual: Number(document.getElementById('nm-estoque').value) || 0,
+    estoque_minimo: Number(document.getElementById('nm-minimo').value) || 0,
+  };
+  const { error } = await sb.from('materiais').insert(payload);
+  if(error){ msg.textContent = error.message; return; }
+  closeModal(); loadTab();
+}
+async function editarMaterial(id){
+  const { data: m } = await sb.from('materiais').select('*').eq('id', id).single();
+  showModal(`
+    <h2>${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Estoque atual</label><input id="em-estoque" type="number" step="0.01" value="${m.estoque_atual}">
+    <label>Estoque mínimo</label><input id="em-minimo" type="number" step="0.01" value="${m.estoque_minimo}">
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoMaterial('${id}')">Salvar ajuste de estoque</button>
+    <p id="em-msg" class="error"></p>
+  `);
+}
+async function salvarEdicaoMaterial(id){
+  const patch = {
+    estoque_atual: Number(document.getElementById('em-estoque').value) || 0,
+    estoque_minimo: Number(document.getElementById('em-minimo').value) || 0,
+  };
+  const { error } = await sb.from('materiais').update(patch).eq('id', id);
+  if(error){ document.getElementById('em-msg').textContent = error.message; return; }
+  closeModal(); loadTab();
+}
+
+// ================= RELATÓRIO MENSAL =================
+function periodoAtual(refDate){
+  // fecha todo dia 20: período do dia 21 do mês anterior até dia 20 do mês de referência
+  const d = refDate ? new Date(refDate+'T12:00:00') : new Date();
+  let y = d.getFullYear(), m = d.getMonth();
+  if(d.getDate() > 20){ m += 1; }
+  const fim = new Date(y, m, 20);
+  const inicio = new Date(y, m-1, 21);
+  return { inicio: inicio.toISOString().slice(0,10), fim: fim.toISOString().slice(0,10) };
+}
+let relatorioRef = todayISO();
+
+async function renderRelatorio(){
+  const c = document.getElementById('content');
+  const { inicio, fim } = periodoAtual(relatorioRef);
+
+  const { data: pecas, error } = await sb.from('pecas')
+    .select('*, fichas_tecnicas(nome), pedidos(numero), costureiras(id,nome), faccionistas(id,nome)')
+    .eq('status', 'pronto')
+    .gte('data_pronto', inicio).lte('data_pronto', fim);
+  // também inclui entregue
+  const { data: pecas2 } = await sb.from('pecas')
+    .select('*, fichas_tecnicas(nome), pedidos(numero), costureiras(id,nome), faccionistas(id,nome)')
+    .eq('status', 'entregue')
+    .gte('data_pronto', inicio).lte('data_pronto', fim);
+
+  const todas = [...(pecas||[]), ...(pecas2||[])];
+
+  let html = `
+    <div class="row" style="margin-bottom:6px;">
+      <input type="date" value="${relatorioRef}" onchange="relatorioRef=this.value; loadTab();">
+    </div>
+    <p class="muted" style="margin-bottom:14px;">Período: ${fmtDate(inicio)} a ${fmtDate(fim)}</p>`;
+
+  if(error){ html += `<p class="error">${error.message}</p>`; c.innerHTML = html; return; }
+
+  const porPessoa = {};
+  let totalGeral = 0;
+  todas.forEach(p => {
+    if(p.costureiras){
+      const k = 'c_'+p.costureiras.id;
+      porPessoa[k] = porPessoa[k] || { nome: p.costureiras.nome+' (costureira)', itens: [], total: 0 };
+      porPessoa[k].itens.push(p);
+      porPessoa[k].total += Number(p.valor_costureira||0);
+      totalGeral += Number(p.valor_costureira||0);
+    }
+    if(p.faccionistas){
+      const k = 'f_'+p.faccionistas.id;
+      porPessoa[k] = porPessoa[k] || { nome: p.faccionistas.nome+' (faccionista)', itens: [], total: 0 };
+      porPessoa[k].itens.push(p);
+      porPessoa[k].total += Number(p.valor_faccionista||0);
+      totalGeral += Number(p.valor_faccionista||0);
+    }
+  });
+
+  html += `<div class="stat" style="margin-bottom:16px;">
+    <div class="card"><div class="num">${todas.length}</div><div class="muted">peças</div></div>
+    <div class="card"><div class="num">${money(totalGeral)}</div><div class="muted">total do período</div></div>
+  </div>`;
+
+  const keys = Object.keys(porPessoa);
+  if(keys.length===0){ html += `<div class="card center muted">Nenhuma peça finalizada nesse período.</div>`; c.innerHTML = html; return; }
+
+  html += keys.map(k => {
+    const p = porPessoa[k];
+    return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;">
+        <strong>${p.nome}</strong>
+        <strong>${money(p.total)}</strong>
+      </div>
+      ${p.itens.map(i=>`<div class="item muted"><span>${i.fichas_tecnicas?.nome} ×${i.quantidade} (#${i.pedidos?.numero})</span><span>${fmtDate(i.data_pronto)}</span></div>`).join('')}
+    </div>`;
+  }).join('');
+
+  html += `<button class="btn ghost block" style="margin-top:10px;" onclick="window.print()">Imprimir / Salvar PDF</button>`;
+  c.innerHTML = html;
+}
+
+// ================= MODAL =================
+function showModal(html){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.id = 'modal-bg';
+  bg.onclick = (e) => { if(e.target.id==='modal-bg') closeModal(); };
+  bg.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(bg);
+}
+function closeModal(){
+  const m = document.getElementById('modal-bg');
+  if(m) m.remove();
+}
+</script>
+</body>
+</html>
