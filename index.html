@@ -589,7 +589,12 @@ async function salvarValor(id, valoresTabela, fk){
 async function renderMateriais(){
   const c = document.getElementById('content');
   const { data: materiais, error } = await sb.from('materiais').select('*, fornecedores(nome)').order('nome');
-  let html = `<button class="btn block" onclick="novoMaterial()">+ Novo material</button><div style="height:14px;"></div>`;
+  let html = `
+    <div class="row">
+      <button class="btn ghost" onclick="abrirCalculadora()">Calculadora</button>
+      <button class="btn" onclick="novoMaterial()">+ Novo material</button>
+    </div>
+    <div style="height:14px;"></div>`;
   if(error){ html += `<p class="error">${error.message}</p>`; c.innerHTML = html; return; }
   html += (materiais||[]).map(m => {
     const baixo = Number(m.estoque_atual) <= Number(m.estoque_minimo);
@@ -666,6 +671,74 @@ async function salvarEdicaoMaterial(id){
   const { error } = await sb.from('materiais').update(patch).eq('id', id);
   if(error){ document.getElementById('em-msg').textContent = error.message; return; }
   closeModal(); loadTab();
+}
+
+// ================= CALCULADORA DE MATERIAIS =================
+function formatMedida(valorCm, unidade){
+  if(unidade !== 'cm'){ return `${Number(valorCm).toLocaleString('pt-BR',{maximumFractionDigits:2})} ${unidade}`; }
+  if(valorCm >= 100){
+    return `${(valorCm/100).toLocaleString('pt-BR',{maximumFractionDigits:2})} m`;
+  }
+  return `${Number(valorCm).toLocaleString('pt-BR',{maximumFractionDigits:2})} cm`;
+}
+
+async function abrirCalculadora(){
+  const { data: fichas } = await sb.from('fichas_tecnicas').select('*').eq('ativo', true).order('nome');
+  showModal(`
+    <h2>Calculadora de materiais <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Buscar tipo de peça</label>
+    <input id="calc-busca" placeholder="Digite pra filtrar..." oninput="filtrarCalcLista()">
+    <div id="calc-lista" style="max-height:220px;overflow-y:auto;margin-top:8px;">
+      ${(fichas||[]).map(f=>`
+        <div class="item calc-opcao" data-nome="${(f.nome||'').toLowerCase()}" style="cursor:pointer;" onclick="selecionarFichaCalc('${f.id}','${(f.nome||'').replace(/'/g,"\\'")}')">
+          <span>${f.nome}</span>
+          <span class="muted">${f.unidade_producao}</span>
+        </div>`).join('') || '<p class="muted">Nenhum tipo de peça cadastrado ainda.</p>'}
+    </div>
+    <div id="calc-resultado"></div>
+  `);
+}
+function filtrarCalcLista(){
+  const q = document.getElementById('calc-busca').value.toLowerCase();
+  document.querySelectorAll('.calc-opcao').forEach(el => {
+    el.style.display = el.dataset.nome.includes(q) ? 'flex' : 'none';
+  });
+}
+async function selecionarFichaCalc(fichaId, nome){
+  const { data: materiais } = await sb.from('ficha_materiais').select('*, materiais(nome,unidade)').eq('ficha_id', fichaId).order('ordem');
+  const div = document.getElementById('calc-resultado');
+  div.innerHTML = `
+    <h2 style="font-size:15px;margin-top:18px;">${nome}</h2>
+    <label>Quantidade a produzir</label>
+    <input id="calc-qtd" type="number" value="1" min="1" oninput="atualizarCalcTotais('${fichaId}')">
+    <div id="calc-totais" style="margin-top:10px;"></div>
+    <button class="btn ghost block" style="margin-top:10px;" onclick="copiarCalculo('${nome.replace(/'/g,"\\'")}')">Copiar lista (WhatsApp)</button>
+  `;
+  div.dataset.materiais = JSON.stringify(materiais||[]);
+  atualizarCalcTotais(fichaId);
+}
+function atualizarCalcTotais(){
+  const div = document.getElementById('calc-resultado');
+  const materiais = JSON.parse(div.dataset.materiais || '[]');
+  const qtd = Number(document.getElementById('calc-qtd').value) || 0;
+  const totaisDiv = document.getElementById('calc-totais');
+  totaisDiv.innerHTML = materiais.map(m => {
+    const total = Number(m.quantidade_por_unidade) * qtd;
+    const label = m.materiais?.unidade === 'cm' ? formatMedida(total, 'cm') : `${total} ${m.materiais?.unidade}`;
+    return `<div class="item"><span>${m.materiais?.nome}</span><span>${label}</span></div>`;
+  }).join('') || '<p class="muted">Sem materiais cadastrados pra essa ficha.</p>';
+}
+function copiarCalculo(nomeFicha){
+  const qtd = document.getElementById('calc-qtd').value;
+  const div = document.getElementById('calc-resultado');
+  const materiais = JSON.parse(div.dataset.materiais || '[]');
+  let texto = `*${nomeFicha}* — ${qtd} un.\n\n`;
+  materiais.forEach(m => {
+    const total = Number(m.quantidade_por_unidade) * Number(qtd);
+    const label = m.materiais?.unidade === 'cm' ? formatMedida(total, 'cm') : `${total} ${m.materiais?.unidade}`;
+    texto += `• ${m.materiais?.nome}: ${label}\n`;
+  });
+  navigator.clipboard.writeText(texto).then(()=>alert('Lista copiada!')).catch(()=>alert(texto));
 }
 
 // ================= RELATÓRIO MENSAL =================
