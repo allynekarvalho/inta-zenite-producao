@@ -101,7 +101,14 @@
 // ---------- CONFIG ----------
 const SUPABASE_URL = "https://ldkgwtdlajoodwsattex.supabase.co";
 const SUPABASE_KEY = "sb_publishable_HUFpcJLnKSeQ3EiXXco0iw_PXv73xgO";
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: window.localStorage,
+  },
+});
 
 const STATUS_LABEL = {aguardando:'Aguardando', em_producao:'Em produção', pronto:'Pronto', entregue:'Entregue'};
 const STATUS_NEXT = {aguardando:'em_producao', em_producao:'pronto', pronto:'entregue'};
