@@ -6,6 +6,10 @@
 <title>Inta Zenite Produção</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1e3a6e">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Inta Zenite">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -107,6 +111,7 @@ let state = {
   tab: 'hoje',
   hojeData: new Date().toISOString().slice(0,10),
   pessoaTipo: 'costureiras',
+  materiaisView: 'lista',
 };
 
 const app = document.getElementById('app');
@@ -118,6 +123,77 @@ function fmtDate(d){
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function money(v){ return (v==null?0:Number(v)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+
+// ---------- FOTOS DE FICHAS (produtos) ----------
+function fichaThumbUrl(f){
+  const fotos = (f?.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
+  return fotos[0]?.url || '';
+}
+function fichaThumbImg(f, size){
+  size = size || 44;
+  const url = fichaThumbUrl(f);
+  if(!url) return `<div class="foto-thumb" style="width:${size}px;height:${size}px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);text-align:center;">sem foto</div>`;
+  return `<img src="${url}" class="foto-thumb" style="width:${size}px;height:${size}px;flex-shrink:0;">`;
+}
+async function uploadFotoFicha(fichaId, file){
+  const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+  const path = `${fichaId}/${Date.now()}.${ext}`;
+  const { error: upErr } = await sb.storage.from('fotos').upload(path, file, { upsert: true, contentType: file.type });
+  if(upErr) return { error: upErr };
+  const { data } = sb.storage.from('fotos').getPublicUrl(path);
+  const { error } = await sb.from('ficha_fotos').insert({ ficha_id: fichaId, url: data.publicUrl });
+  return { error };
+}
+async function editarFotoFicha(fichaId, nome){
+  const { data: fotos } = await sb.from('ficha_fotos').select('*').eq('ficha_id', fichaId).order('ordem');
+  showModal(`
+    <h2>Foto — ${nome} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <div id="ff-fotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      ${(fotos||[]).map(f=>`
+        <div style="position:relative;">
+          <img src="${f.url}" class="foto-thumb" style="width:80px;height:80px;">
+          <button class="btn danger sm" style="position:absolute;top:-6px;right:-6px;padding:1px 7px;border-radius:50%;" onclick="removerFotoFicha('${f.id}','${fichaId}','${nome.replace(/'/g,"\\'")}')">&times;</button>
+        </div>`).join('') || '<p class="muted">Nenhuma foto ainda.</p>'}
+    </div>
+    <label>Adicionar foto (câmera ou galeria)</label>
+    <input type="file" id="ff-foto" accept="image/*" capture="environment">
+    <button class="btn block gold" style="margin-top:14px;" onclick="salvarFotoFicha('${fichaId}','${nome.replace(/'/g,"\\'")}')">Enviar foto</button>
+    <p id="ff-msg" class="error"></p>
+  `);
+}
+async function salvarFotoFicha(fichaId, nome){
+  const file = document.getElementById('ff-foto').files[0];
+  const msg = document.getElementById('ff-msg');
+  if(!file){ msg.textContent='Escolha uma foto.'; return; }
+  msg.textContent = 'Enviando...'; msg.className='muted';
+  const { error } = await uploadFotoFicha(fichaId, file);
+  if(error){ msg.textContent = error.message; msg.className='error'; return; }
+  await editarFotoFicha(fichaId, nome);
+}
+async function removerFotoFicha(fotoId, fichaId, nome){
+  await sb.from('ficha_fotos').delete().eq('id', fotoId);
+  await editarFotoFicha(fichaId, nome);
+}
+function fichaPickerListHtml(fichas, onClickFnName){
+  return (fichas||[]).map(f=>{
+    const url = fichaThumbUrl(f);
+    return `
+    <div class="item calc-opcao" data-nome="${(f.nome||'').toLowerCase()}" style="cursor:pointer;padding:8px 10px;" onclick="${onClickFnName}('${f.id}')">
+      ${url?`<img src="${url}" class="foto-thumb">`:`<div class="foto-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:9px;text-align:center;">sem foto</div>`}
+      <div style="flex:1;">
+        <div>${f.nome}</div>
+        <div class="muted" style="font-size:11px;">${f.unidade_producao}</div>
+      </div>
+      <button class="btn ghost sm" onclick="event.stopPropagation(); editarFotoFicha('${f.id}','${(f.nome||'').replace(/'/g,"\\'")}')">📷</button>
+    </div>`;
+  }).join('') || '<p class="muted" style="padding:10px;">Nenhum tipo de peça cadastrado ainda.</p>';
+}
+function filtrarFichaPicker(inputId, listId){
+  const q = document.getElementById(inputId).value.toLowerCase();
+  document.querySelectorAll('#'+listId+' .calc-opcao').forEach(el=>{
+    el.style.display = el.dataset.nome.includes(q) ? 'flex' : 'none';
+  });
+}
 
 // ---------- BOOT ----------
 async function boot(){
@@ -191,7 +267,7 @@ function renderApp(){
 function navBtn(id,label){
   return `<button class="${state.tab===id?'active':''}" onclick="switchTab('${id}')">${label}</button>`;
 }
-function switchTab(id){ state.tab = id; renderApp(); }
+function switchTab(id){ state.tab = id; state.materiaisView = 'lista'; renderApp(); }
 
 function loadTab(){
   const c = document.getElementById('content');
@@ -208,7 +284,7 @@ async function renderHoje(){
   const c = document.getElementById('content');
   const dia = state.hojeData;
   const { data: pecas, error } = await sb.from('pecas')
-    .select('*, fichas_tecnicas(nome), pedidos(numero, prazo, urgente, clientes(nome)), costureiras(nome), faccionistas(nome)')
+    .select('*, fichas_tecnicas(nome, ficha_fotos(url,ordem)), pedidos(numero, prazo, urgente, clientes(nome)), costureiras(nome), faccionistas(nome)')
     .eq('dia_producao', dia)
     .order('criado_em');
 
@@ -239,10 +315,13 @@ async function renderHoje(){
     return `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-        <div>
-          <strong>${p.fichas_tecnicas?.nome || 'Peça'}</strong> ×${p.quantidade}
-          <div class="muted">${p.pedidos?.clientes?.nome || ''} · Pedido #${p.pedidos?.numero || ''}</div>
-          <div class="muted">Responsável: ${quem}</div>
+        <div style="display:flex;gap:10px;">
+          ${fichaThumbImg(p.fichas_tecnicas)}
+          <div>
+            <strong>${p.fichas_tecnicas?.nome || 'Peça'}</strong> ×${p.quantidade}
+            <div class="muted">${p.pedidos?.clientes?.nome || ''} · Pedido #${p.pedidos?.numero || ''}</div>
+            <div class="muted">Responsável: ${quem}</div>
+          </div>
         </div>
         <div style="text-align:right;">
           ${urgente ? '<span class="pill urgente">Urgente</span>' : ''}
@@ -298,32 +377,167 @@ async function renderPedidos(){
   c.innerHTML = html;
 }
 
+let npPecas = [];
+let npFormCache = null;
+
 async function abrirNovoPedido(){
+  npPecas = [];
+  npFormCache = null;
+  await npMostrarForm();
+}
+
+async function npMostrarForm(){
   const { data: clientes } = await sb.from('clientes').select('*').order('nome');
   showModal(`
-    <h2>Novo pedido <button class="close" onclick="closeModal()">&times;</button></h2>
+    <h2>Novo pedido <button class="close" onclick="npFecharTudo()">&times;</button></h2>
     <label>Cliente</label>
     <select id="np-cliente">
       <option value="">— novo cliente —</option>
-      ${(clientes||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}
+      ${(clientes||[]).map(c=>`<option value="${c.id}" ${npFormCache?.clienteId===c.id?'selected':''}>${c.nome}</option>`).join('')}
     </select>
-    <div id="np-novo-cliente" style="margin-top:8px;">
+    <div id="np-novo-cliente" style="margin-top:8px; display:${npFormCache?.clienteId?'none':'block'};">
       <label>Nome do cliente</label>
-      <input id="np-cliente-nome" placeholder="Nome do Irmão ou da Loja">
+      <input id="np-cliente-nome" placeholder="Nome do Irmão ou da Loja" value="${npFormCache?.clienteNome||''}">
       <label>Tipo</label>
-      <select id="np-cliente-tipo"><option value="irmao">Irmão</option><option value="loja">Loja</option></select>
+      <select id="np-cliente-tipo">
+        <option value="irmao" ${npFormCache?.clienteTipo!=='loja'?'selected':''}>Irmão</option>
+        <option value="loja" ${npFormCache?.clienteTipo==='loja'?'selected':''}>Loja</option>
+      </select>
     </div>
     <label>Prazo</label>
-    <input type="date" id="np-prazo">
-    <label class="checkline" style="margin-top:12px;"><input type="checkbox" id="np-urgente"> Urgente</label>
+    <input type="date" id="np-prazo" value="${npFormCache?.prazo||''}">
+    <label class="checkline" style="margin-top:12px;"><input type="checkbox" id="np-urgente" ${npFormCache?.urgente?'checked':''}> Urgente</label>
     <label>Observações</label>
-    <textarea id="np-obs" rows="2"></textarea>
+    <textarea id="np-obs" rows="2">${npFormCache?.obs||''}</textarea>
+
+    <h2 style="font-size:15px;margin-top:20px;">Peças do pedido</h2>
+    <div id="np-pecas-lista"></div>
+    <button class="btn ghost block" style="margin-top:8px;" onclick="npAbrirSeletorPeca()">+ Adicionar peça</button>
+
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarNovoPedido()">Criar pedido</button>
     <p id="np-msg" class="error"></p>
   `);
   document.getElementById('np-cliente').onchange = e => {
     document.getElementById('np-novo-cliente').style.display = e.target.value ? 'none' : 'block';
   };
+  renderNpPecasList();
+}
+function npFecharTudo(){ npPecas = []; npFormCache = null; closeModal(); }
+function renderNpPecasList(){
+  const div = document.getElementById('np-pecas-lista');
+  if(!div) return;
+  if(npPecas.length===0){ div.innerHTML = '<p class="muted">Nenhuma peça adicionada ainda.</p>'; return; }
+  div.innerHTML = npPecas.map((p,i)=>`
+    <div class="item">
+      <div style="display:flex;gap:10px;align-items:center;">
+        ${fichaThumbImg(p.ficha, 40)}
+        <div>
+          <strong>${p.nome}</strong> ×${p.quantidade}
+          <div class="muted">${p.costureiraNome||p.faccionistaNome||'Sem responsável definido'}${p.dia_producao?(' · '+fmtDate(p.dia_producao)):''}</div>
+        </div>
+      </div>
+      <button class="btn ghost sm" onclick="npPecas.splice(${i},1); renderNpPecasList();">Remover</button>
+    </div>`).join('');
+}
+
+function npCapturarForm(){
+  npFormCache = {
+    clienteId: document.getElementById('np-cliente').value,
+    clienteNome: document.getElementById('np-cliente-nome').value,
+    clienteTipo: document.getElementById('np-cliente-tipo').value,
+    prazo: document.getElementById('np-prazo').value,
+    urgente: document.getElementById('np-urgente').checked,
+    obs: document.getElementById('np-obs').value,
+  };
+}
+
+async function npAbrirSeletorPeca(){
+  npCapturarForm();
+  const { data: fichas } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem)').eq('ativo', true).order('nome');
+  const { data: costureiras } = await sb.from('costureiras').select('*').eq('ativo', true).order('nome');
+  const { data: faccionistas } = await sb.from('faccionistas').select('*').eq('ativo', true).order('nome');
+  window._npFichasCache = fichas||[];
+  showModal(`
+    <h2>Adicionar peça <button class="close" onclick="npMostrarForm()">&times;</button></h2>
+    <label>Buscar tipo de peça</label>
+    <input id="np2-busca" placeholder="Digite pra filtrar..." oninput="filtrarFichaPicker('np2-busca','np2-ficha-lista')">
+    <input type="hidden" id="np2-ficha">
+    <p id="np2-ficha-selecionada" class="muted" style="margin:6px 0;">Nenhum tipo selecionado.</p>
+    <div id="np2-ficha-lista" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;">
+      ${fichaPickerListHtml(fichas, 'np2Selecionar')}
+    </div>
+    <p class="muted">Não achou o tipo? <a href="#" onclick="event.preventDefault(); npNovaFicha()">Cadastrar novo tipo de peça</a></p>
+    <label>Quantidade</label>
+    <input type="number" id="np2-qtd" value="1" min="1">
+    <label>Dia de produção</label>
+    <input type="date" id="np2-dia">
+    <label>Costureira</label>
+    <select id="np2-costureira"><option value="">—</option>${(costureiras||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+    <label>Faccionista</label>
+    <select id="np2-faccionista"><option value="">—</option>${(faccionistas||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+    <button class="btn block gold" style="margin-top:16px;" onclick="npConfirmarPeca()">Adicionar à lista</button>
+    <p id="np2-msg" class="error"></p>
+  `);
+}
+function np2Selecionar(id){
+  const f = (window._npFichasCache||[]).find(x=>x.id===id);
+  document.getElementById('np2-ficha').value = id;
+  document.getElementById('np2-ficha-selecionada').textContent = 'Selecionado: ' + (f?.nome||'');
+  document.getElementById('np2-ficha-selecionada').className = '';
+}
+async function npNovaFicha(){
+  showModal(`
+    <h2>Novo tipo de peça <button class="close" onclick="npAbrirSeletorPeca()">&times;</button></h2>
+    <label>Nome (ex: Avental Marechal, Punho VM REAA GOEMT)</label>
+    <input id="nf-nome">
+    <label>Unidade de produção</label>
+    <input id="nf-unidade" placeholder="peça, par, avental...">
+    <label>Foto do modelo (opcional)</label>
+    <input type="file" id="nf-foto" accept="image/*" capture="environment">
+    <button class="btn block gold" style="margin-top:16px;" onclick="npSalvarFicha()">Salvar</button>
+    <p id="nf-msg" class="error"></p>
+  `);
+}
+async function npSalvarFicha(){
+  const nome = document.getElementById('nf-nome').value.trim();
+  const unidade_producao = document.getElementById('nf-unidade').value.trim() || 'peça';
+  const msg = document.getElementById('nf-msg');
+  if(!nome){ msg.textContent = 'Informe o nome.'; return; }
+  const { data, error } = await sb.from('fichas_tecnicas').insert({ nome, unidade_producao }).select().single();
+  if(error){ msg.textContent = error.message; return; }
+  const file = document.getElementById('nf-foto').files[0];
+  if(file){
+    const { error: fotoErr } = await uploadFotoFicha(data.id, file);
+    if(fotoErr){ msg.textContent = 'Tipo salvo, mas a foto falhou: ' + fotoErr.message; }
+  }
+  await npAbrirSeletorPeca();
+}
+async function npConfirmarPeca(){
+  const msg = document.getElementById('np2-msg');
+  const ficha_id = document.getElementById('np2-ficha').value;
+  if(!ficha_id){ msg.textContent = 'Escolha o tipo de peça.'; return; }
+  const f = (window._npFichasCache||[]).find(x=>x.id===ficha_id);
+  const quantidade = Number(document.getElementById('np2-qtd').value) || 1;
+  const dia_producao = document.getElementById('np2-dia').value || null;
+  const costureira_id = document.getElementById('np2-costureira').value || null;
+  const faccionista_id = document.getElementById('np2-faccionista').value || null;
+  const costureiraSel = document.getElementById('np2-costureira');
+  const faccionistaSel = document.getElementById('np2-faccionista');
+  const costureiraNome = costureira_id ? costureiraSel.options[costureiraSel.selectedIndex].textContent : '';
+  const faccionistaNome = faccionista_id ? faccionistaSel.options[faccionistaSel.selectedIndex].textContent : '';
+
+  let valor_costureira = null, valor_faccionista = null;
+  if(costureira_id){
+    const { data } = await sb.from('costureira_valores').select('valor').eq('costureira_id', costureira_id).eq('ficha_id', ficha_id).maybeSingle();
+    valor_costureira = data?.valor ?? null;
+  }
+  if(faccionista_id){
+    const { data } = await sb.from('faccionista_valores').select('valor').eq('faccionista_id', faccionista_id).eq('ficha_id', ficha_id).maybeSingle();
+    valor_faccionista = data?.valor ?? null;
+  }
+
+  npPecas.push({ ficha_id, nome: f?.nome||'Peça', ficha: f, quantidade, dia_producao, costureira_id, faccionista_id, costureiraNome, faccionistaNome, valor_costureira, valor_faccionista });
+  await npMostrarForm();
 }
 
 async function salvarNovoPedido(){
@@ -342,13 +556,24 @@ async function salvarNovoPedido(){
   const observacao = document.getElementById('np-obs').value;
   const { data, error } = await sb.from('pedidos').insert({ cliente_id: clienteId, prazo, urgente, observacao }).select().single();
   if(error){ msg.textContent = error.message; return; }
+
+  if(npPecas.length){
+    const linhas = npPecas.map(p => ({
+      pedido_id: data.id, ficha_id: p.ficha_id, quantidade: p.quantidade,
+      dia_producao: p.dia_producao, costureira_id: p.costureira_id, faccionista_id: p.faccionista_id,
+      valor_costureira: p.valor_costureira, valor_faccionista: p.valor_faccionista,
+    }));
+    const { error: errPecas } = await sb.from('pecas').insert(linhas);
+    if(errPecas){ msg.textContent = 'Pedido criado, mas houve erro ao salvar as peças: ' + errPecas.message; }
+  }
+  npPecas = []; npFormCache = null;
   closeModal();
   await abrirPedido(data.id);
 }
 
 async function abrirPedido(id){
   const { data: pedido } = await sb.from('pedidos').select('*, clientes(nome,telefone)').eq('id', id).single();
-  const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas(nome)').eq('pedido_id', id).order('criado_em');
+  const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
   showModal(`
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
     <p class="muted">${pedido.clientes?.nome || ''} · Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
@@ -356,9 +581,12 @@ async function abrirPedido(id){
     <div id="pedido-pecas">
       ${(pecas||[]).map(p=>`
         <div class="item">
-          <div>
-            <strong>${p.fichas_tecnicas?.nome||'Peça'}</strong> ×${p.quantidade}
-            <div class="muted">${p.dia_producao?('Produção: '+fmtDate(p.dia_producao)):'Sem data definida'} · <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span></div>
+          <div style="display:flex;gap:10px;align-items:center;">
+            ${fichaThumbImg(p.fichas_tecnicas, 40)}
+            <div>
+              <strong>${p.fichas_tecnicas?.nome||'Peça'}</strong> ×${p.quantidade}
+              <div class="muted">${p.dia_producao?('Produção: '+fmtDate(p.dia_producao)):'Sem data definida'} · <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span></div>
+            </div>
           </div>
           <button class="btn ghost sm" onclick="closeModal(); editarPeca('${p.id}')">Editar</button>
         </div>
@@ -369,16 +597,19 @@ async function abrirPedido(id){
 }
 
 async function adicionarPeca(pedidoId){
-  const { data: fichas } = await sb.from('fichas_tecnicas').select('*').eq('ativo', true).order('nome');
+  const { data: fichas } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem)').eq('ativo', true).order('nome');
   const { data: costureiras } = await sb.from('costureiras').select('*').eq('ativo', true).order('nome');
   const { data: faccionistas } = await sb.from('faccionistas').select('*').eq('ativo', true).order('nome');
+  window._pcFichasCache = fichas||[];
   showModal(`
     <h2>Nova peça <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>
-    <label>Tipo de peça</label>
-    <select id="pc-ficha">
-      <option value="">Selecione...</option>
-      ${(fichas||[]).map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
-    </select>
+    <label>Buscar tipo de peça</label>
+    <input id="pc-busca" placeholder="Digite pra filtrar..." oninput="filtrarFichaPicker('pc-busca','pc-ficha-lista')">
+    <input type="hidden" id="pc-ficha">
+    <p id="pc-ficha-selecionada" class="muted" style="margin:6px 0;">Nenhum tipo selecionado.</p>
+    <div id="pc-ficha-lista" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;">
+      ${fichaPickerListHtml(fichas, 'pcSelecionarFicha')}
+    </div>
     <p class="muted">Não achou o tipo? <a href="#" onclick="event.preventDefault(); novaFicha('${pedidoId}')">Cadastrar novo tipo de peça</a></p>
     <label>Quantidade</label>
     <input type="number" id="pc-qtd" value="1" min="1">
@@ -391,6 +622,12 @@ async function adicionarPeca(pedidoId){
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarPeca('${pedidoId}')">Salvar peça</button>
     <p id="pc-msg" class="error"></p>
   `);
+}
+function pcSelecionarFicha(id){
+  const f = (window._pcFichasCache||[]).find(x=>x.id===id);
+  document.getElementById('pc-ficha').value = id;
+  document.getElementById('pc-ficha-selecionada').textContent = 'Selecionado: ' + (f?.nome||'');
+  document.getElementById('pc-ficha-selecionada').className = '';
 }
 
 async function salvarPeca(pedidoId){
@@ -427,6 +664,8 @@ async function novaFicha(pedidoId){
     <input id="nf-nome">
     <label>Unidade de produção</label>
     <input id="nf-unidade" placeholder="peça, par, avental...">
+    <label>Foto do modelo (opcional)</label>
+    <input type="file" id="nf-foto" accept="image/*" capture="environment">
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarFicha('${pedidoId}')">Salvar</button>
     <p id="nf-msg" class="error"></p>
   `);
@@ -436,8 +675,13 @@ async function salvarFicha(pedidoId){
   const unidade_producao = document.getElementById('nf-unidade').value.trim() || 'peça';
   const msg = document.getElementById('nf-msg');
   if(!nome){ msg.textContent = 'Informe o nome.'; return; }
-  const { error } = await sb.from('fichas_tecnicas').insert({ nome, unidade_producao });
+  const { data, error } = await sb.from('fichas_tecnicas').insert({ nome, unidade_producao }).select().single();
   if(error){ msg.textContent = error.message; return; }
+  const file = document.getElementById('nf-foto').files[0];
+  if(file){
+    const { error: fotoErr } = await uploadFotoFicha(data.id, file);
+    if(fotoErr){ msg.textContent = 'Tipo salvo, mas a foto falhou: ' + fotoErr.message; }
+  }
   closeModal();
   await adicionarPeca(pedidoId);
 }
@@ -587,11 +831,12 @@ async function salvarValor(id, valoresTabela, fk){
 
 // ================= MATERIAIS =================
 async function renderMateriais(){
+  if(state.materiaisView === 'calculadora'){ renderCalculadora(); return; }
   const c = document.getElementById('content');
   const { data: materiais, error } = await sb.from('materiais').select('*, fornecedores(nome)').order('nome');
   let html = `
     <div class="row">
-      <button class="btn ghost" onclick="abrirCalculadora()">Calculadora</button>
+      <button class="btn ghost" onclick="state.materiaisView='calculadora'; loadTab();">Calculadora de materiais</button>
       <button class="btn" onclick="novoMaterial()">+ Novo material</button>
     </div>
     <div style="height:14px;"></div>`;
@@ -682,27 +927,24 @@ function formatMedida(valorCm, unidade){
   return `${Number(valorCm).toLocaleString('pt-BR',{maximumFractionDigits:2})} cm`;
 }
 
-async function abrirCalculadora(){
-  const { data: fichas } = await sb.from('fichas_tecnicas').select('*').eq('ativo', true).order('nome');
-  showModal(`
-    <h2>Calculadora de materiais <button class="close" onclick="closeModal()">&times;</button></h2>
+async function renderCalculadora(){
+  const c = document.getElementById('content');
+  const { data: fichas } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem)').eq('ativo', true).order('nome');
+  window._calcFichasCache = fichas||[];
+  c.innerHTML = `
+    <button class="btn ghost sm" onclick="state.materiaisView='lista'; loadTab();">‹ Materiais</button>
+    <h2 style="margin-top:14px;">Calculadora de materiais</h2>
     <label>Buscar tipo de peça</label>
-    <input id="calc-busca" placeholder="Digite pra filtrar..." oninput="filtrarCalcLista()">
-    <div id="calc-lista" style="max-height:220px;overflow-y:auto;margin-top:8px;">
-      ${(fichas||[]).map(f=>`
-        <div class="item calc-opcao" data-nome="${(f.nome||'').toLowerCase()}" style="cursor:pointer;" onclick="selecionarFichaCalc('${f.id}','${(f.nome||'').replace(/'/g,"\\'")}')">
-          <span>${f.nome}</span>
-          <span class="muted">${f.unidade_producao}</span>
-        </div>`).join('') || '<p class="muted">Nenhum tipo de peça cadastrado ainda.</p>'}
+    <input id="calc-busca" placeholder="Digite pra filtrar..." oninput="filtrarFichaPicker('calc-busca','calc-lista')">
+    <div id="calc-lista" style="max-height:280px;overflow-y:auto;margin-top:8px;border:1px solid var(--border);border-radius:10px;">
+      ${fichaPickerListHtml(fichas, 'calcSelecionarFicha')}
     </div>
     <div id="calc-resultado"></div>
-  `);
+  `;
 }
-function filtrarCalcLista(){
-  const q = document.getElementById('calc-busca').value.toLowerCase();
-  document.querySelectorAll('.calc-opcao').forEach(el => {
-    el.style.display = el.dataset.nome.includes(q) ? 'flex' : 'none';
-  });
+function calcSelecionarFicha(id){
+  const f = (window._calcFichasCache||[]).find(x=>x.id===id);
+  if(f) selecionarFichaCalc(f.id, f.nome);
 }
 async function selecionarFichaCalc(fichaId, nome){
   const { data: materiais } = await sb.from('ficha_materiais').select('*, materiais(nome,unidade)').eq('ficha_id', fichaId).order('ordem');
@@ -822,6 +1064,7 @@ async function renderRelatorio(){
 
 // ================= MODAL =================
 function showModal(html){
+  closeModal();
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.id = 'modal-bg';
