@@ -219,7 +219,7 @@ async function boot(){
 boot();
 
 function render(){
-  if(!state.session){ renderLogin(); return; }
+  // acesso direto, sem login por e-mail
   renderApp();
 }
 
@@ -261,7 +261,6 @@ function renderApp(){
           <p class="eyebrow">Inta Zenite</p>
           <h1>Produção</h1>
         </div>
-        <button class="btn ghost sm" onclick="sb.auth.signOut()">Sair</button>
       </div>
       <div id="content"></div>
     </div>
