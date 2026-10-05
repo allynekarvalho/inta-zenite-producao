@@ -91,6 +91,9 @@
   .foto-thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--border);}
   .checkline{display:flex;align-items:center;gap:10px;}
   .checkline input[type=checkbox]{width:auto;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+  .chip{border:1px solid var(--border);background:var(--card);color:var(--ink);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .chip.active{background:var(--royal);color:#fff;border-color:var(--royal);}
   .error{color:var(--danger);font-size:13px;margin-top:6px;}
 </style>
 </head>
@@ -119,6 +122,7 @@ let state = {
   hojeData: new Date().toISOString().slice(0,10),
   pessoaTipo: 'costureiras',
   materiaisView: 'lista',
+  produtos: { potenciaId: null, tipoId: null, ritoId: null },
 };
 
 const app = document.getElementById('app');
@@ -264,6 +268,7 @@ function renderApp(){
     <div class="navbottom">
       ${navBtn('hoje','Hoje')}
       ${navBtn('pedidos','Pedidos')}
+      ${navBtn('produtos','Produtos')}
       ${navBtn('costureiras','Equipe')}
       ${navBtn('materiais','Materiais')}
       ${navBtn('relatorio','Relatório')}
@@ -282,6 +287,7 @@ function loadTab(){
   if(state.tab==='hoje') renderHoje();
   else if(state.tab==='pedidos') renderPedidos();
   else if(state.tab==='costureiras') renderEquipe();
+  else if(state.tab==='produtos') renderProdutos();
   else if(state.tab==='materiais') renderMateriais();
   else if(state.tab==='relatorio') renderRelatorio();
 }
@@ -356,6 +362,185 @@ async function avancarStatus(id, novo){
   const { error } = await sb.from('pecas').update(patch).eq('id', id);
   if(error){ alert('Erro: ' + error.message); return; }
   loadTab();
+}
+
+// ================= PRODUTOS (catálogo: potência / tipo / rito) =================
+function chipsHtml(items, selectedId, fnName){
+  return (items||[]).map(it => `
+    <button type="button" class="chip ${it.id===selectedId?'active':''}" data-nome="${(it.nome||'').toLowerCase()}" onclick="${fnName}('${it.id}')">${it.nome}</button>
+  `).join('') || '<p class="muted" style="padding:4px 0;">Nenhum cadastrado ainda.</p>';
+}
+function filtrarChips(inputId, listId){
+  const q = document.getElementById(inputId).value.toLowerCase();
+  document.querySelectorAll('#'+listId+' .chip').forEach(el=>{
+    el.style.display = el.dataset.nome.includes(q) ? 'inline-flex' : 'none';
+  });
+}
+
+async function renderProdutos(){
+  const c = document.getElementById('content');
+  const [{ data: potencias }, { data: tipos }] = await Promise.all([
+    sb.from('potencias').select('*').order('nome'),
+    sb.from('tipos_peca').select('*').order('nome'),
+  ]);
+  window._prodPotencias = potencias||[];
+  window._prodTipos = tipos||[];
+
+  let ritos = [];
+  if(state.produtos.potenciaId){
+    const { data } = await sb.from('ritos').select('*').eq('potencia_id', state.produtos.potenciaId).order('nome');
+    ritos = data||[];
+  }
+  window._prodRitos = ritos;
+
+  let html = `
+    <h2 style="font-size:15px;">Potência</h2>
+    <input id="prod-busca-potencia" placeholder="Buscar potência..." oninput="filtrarChips('prod-busca-potencia','prod-lista-potencia')">
+    <div id="prod-lista-potencia" class="chips">
+      ${chipsHtml(potencias, state.produtos.potenciaId, 'selecionarPotenciaProduto')}
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <input id="prod-nova-potencia" placeholder="Nome da nova potência (ex: GLEMT)">
+      <button class="btn ghost sm" onclick="criarPotenciaProduto()">+ Adicionar</button>
+    </div>`;
+
+  if(state.produtos.potenciaId){
+    html += `
+    <h2 style="font-size:15px;margin-top:22px;">Tipo de peça</h2>
+    <input id="prod-busca-tipo" placeholder="Buscar tipo de peça..." oninput="filtrarChips('prod-busca-tipo','prod-lista-tipo')">
+    <div id="prod-lista-tipo" class="chips">
+      ${chipsHtml(tipos, state.produtos.tipoId, 'selecionarTipoProduto')}
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <input id="prod-novo-tipo" placeholder="Nome do novo tipo (ex: Punho)">
+      <button class="btn ghost sm" onclick="criarTipoProduto()">+ Adicionar</button>
+    </div>
+
+    <h2 style="font-size:15px;margin-top:22px;">Rito</h2>
+    <input id="prod-busca-rito" placeholder="Buscar rito..." oninput="filtrarChips('prod-busca-rito','prod-lista-rito')">
+    <div id="prod-lista-rito" class="chips">
+      ${chipsHtml(ritos, state.produtos.ritoId, 'selecionarRitoProduto')}
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <input id="prod-novo-rito" placeholder="Nome do novo rito (ex: REAA)">
+      <button class="btn ghost sm" onclick="criarRitoProduto()">+ Adicionar</button>
+    </div>
+    ${state.produtos.ritoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.ritoId=null; loadTab();">Limpar rito selecionado</a></p>` : ''}
+    `;
+  }
+
+  if(state.produtos.potenciaId && state.produtos.tipoId){
+    html += `<div id="prod-lista-produtos" style="margin-top:22px;"></div>`;
+  }
+
+  c.innerHTML = html;
+  if(state.produtos.potenciaId && state.produtos.tipoId){
+    carregarProdutosFiltrados();
+  }
+}
+
+function selecionarPotenciaProduto(id){
+  state.produtos.potenciaId = id;
+  state.produtos.tipoId = null;
+  state.produtos.ritoId = null;
+  loadTab();
+}
+function selecionarTipoProduto(id){
+  state.produtos.tipoId = id;
+  loadTab();
+}
+function selecionarRitoProduto(id){
+  state.produtos.ritoId = id;
+  loadTab();
+}
+async function criarPotenciaProduto(){
+  const input = document.getElementById('prod-nova-potencia');
+  const nome = input.value.trim();
+  if(!nome) return;
+  const { data, error } = await sb.from('potencias').insert({ nome }).select().single();
+  if(error){ alert(error.message); return; }
+  state.produtos.potenciaId = data.id;
+  state.produtos.tipoId = null;
+  state.produtos.ritoId = null;
+  loadTab();
+}
+async function criarTipoProduto(){
+  const input = document.getElementById('prod-novo-tipo');
+  const nome = input.value.trim();
+  if(!nome) return;
+  const { data, error } = await sb.from('tipos_peca').insert({ nome }).select().single();
+  if(error){ alert(error.message); return; }
+  state.produtos.tipoId = data.id;
+  loadTab();
+}
+async function criarRitoProduto(){
+  const input = document.getElementById('prod-novo-rito');
+  const nome = input.value.trim();
+  if(!nome || !state.produtos.potenciaId) return;
+  const { data, error } = await sb.from('ritos').insert({ nome, potencia_id: state.produtos.potenciaId }).select().single();
+  if(error){ alert(error.message); return; }
+  state.produtos.ritoId = data.id;
+  loadTab();
+}
+
+async function carregarProdutosFiltrados(){
+  let q = sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem)').eq('ativo', true)
+    .eq('potencia_id', state.produtos.potenciaId).eq('tipo_peca_id', state.produtos.tipoId);
+  if(state.produtos.ritoId) q = q.eq('rito_id', state.produtos.ritoId);
+  const { data: produtos, error } = await q.order('nome');
+  const div = document.getElementById('prod-lista-produtos');
+  if(!div) return;
+  if(error){ div.innerHTML = `<p class="error">${error.message}</p>`; return; }
+  div.innerHTML = `
+    <h2 style="font-size:15px;">Produtos cadastrados</h2>
+    ${(produtos||[]).map(f=>`
+      <div class="item">
+        <div style="display:flex;gap:10px;align-items:center;">
+          ${fichaThumbImg(f, 40)}
+          <div><strong>${f.nome}</strong><div class="muted">${f.unidade_producao}</div></div>
+        </div>
+        <button class="btn ghost sm" onclick="editarFotoFicha('${f.id}','${(f.nome||'').replace(/'/g,"\\'")}')">📷</button>
+      </div>`).join('') || '<p class="muted">Nenhum produto cadastrado com essa combinação ainda.</p>'}
+    <button class="btn block gold" style="margin-top:10px;" onclick="novoProdutoCompleto()">+ Novo produto</button>
+  `;
+}
+function novoProdutoCompleto(){
+  const potNome = (window._prodPotencias||[]).find(p=>p.id===state.produtos.potenciaId)?.nome || '';
+  const tipoNome = (window._prodTipos||[]).find(t=>t.id===state.produtos.tipoId)?.nome || '';
+  const ritoNome = (window._prodRitos||[]).find(r=>r.id===state.produtos.ritoId)?.nome || '';
+  const sugestao = [tipoNome, potNome, ritoNome].filter(Boolean).join(' ');
+  showModal(`
+    <h2>Novo produto <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Nome do produto</label>
+    <input id="npf-nome" value="${sugestao.replace(/"/g,'&quot;')}">
+    <label>Unidade de produção</label>
+    <input id="npf-unidade" placeholder="peça, par, avental...">
+    <label>Foto do modelo (opcional)</label>
+    <input type="file" id="npf-foto" accept="image/*" capture="environment">
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarProdutoCompleto()">Salvar</button>
+    <p id="npf-msg" class="error"></p>
+  `);
+}
+async function salvarProdutoCompleto(){
+  const nome = document.getElementById('npf-nome').value.trim();
+  const unidade_producao = document.getElementById('npf-unidade').value.trim() || 'peça';
+  const msg = document.getElementById('npf-msg');
+  if(!nome){ msg.textContent = 'Informe o nome.'; return; }
+  const payload = {
+    nome, unidade_producao,
+    potencia_id: state.produtos.potenciaId,
+    tipo_peca_id: state.produtos.tipoId,
+    rito_id: state.produtos.ritoId || null,
+  };
+  const { data, error } = await sb.from('fichas_tecnicas').insert(payload).select().single();
+  if(error){ msg.textContent = error.message; return; }
+  const file = document.getElementById('npf-foto').files[0];
+  if(file){
+    const { error: fotoErr } = await uploadFotoFicha(data.id, file);
+    if(fotoErr){ msg.textContent = 'Produto salvo, mas a foto falhou: ' + fotoErr.message; }
+  }
+  closeModal();
+  carregarProdutosFiltrados();
 }
 
 // ================= PEDIDOS =================
