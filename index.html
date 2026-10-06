@@ -122,7 +122,7 @@ let state = {
   hojeData: new Date().toISOString().slice(0,10),
   pessoaTipo: 'costureiras',
   materiaisView: 'lista',
-  produtos: { potenciaId: null, tipoId: null, ritoId: null },
+  produtos: { potenciaId: null, tipoId: null, ritoId: null, cargoId: null },
 };
 
 const app = document.getElementById('app');
@@ -424,7 +424,26 @@ async function renderProdutos(){
       <input id="prod-novo-rito" placeholder="Nome do novo rito (ex: REAA)">
       <button class="btn ghost sm" onclick="criarRitoProduto()">+ Adicionar</button>
     </div>
-    ${state.produtos.ritoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.ritoId=null; loadTab();">Limpar rito selecionado</a></p>` : ''}
+    ${state.produtos.ritoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.ritoId=null; state.produtos.cargoId=null; loadTab();">Limpar rito selecionado</a></p>` : ''}
+    `;
+  }
+
+  let cargos = [];
+  if(state.produtos.ritoId){
+    const { data } = await sb.from('cargos').select('*').eq('rito_id', state.produtos.ritoId).order('nome');
+    cargos = data||[];
+    window._prodCargos = cargos;
+    html += `
+    <h2 style="font-size:15px;margin-top:22px;">Cargo</h2>
+    <input id="prod-busca-cargo" placeholder="Buscar cargo..." oninput="filtrarChips('prod-busca-cargo','prod-lista-cargo')">
+    <div id="prod-lista-cargo" class="chips">
+      ${chipsHtml(cargos, state.produtos.cargoId, 'selecionarCargoProduto')}
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <input id="prod-novo-cargo" placeholder="Nome do novo cargo (ex: Venerável Mestre)">
+      <button class="btn ghost sm" onclick="criarCargoProduto()">+ Adicionar</button>
+    </div>
+    ${state.produtos.cargoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.cargoId=null; loadTab();">Limpar cargo selecionado</a></p>` : ''}
     `;
   }
 
@@ -450,6 +469,11 @@ function selecionarTipoProduto(id){
 }
 function selecionarRitoProduto(id){
   state.produtos.ritoId = id;
+  state.produtos.cargoId = null;
+  loadTab();
+}
+function selecionarCargoProduto(id){
+  state.produtos.cargoId = id;
   loadTab();
 }
 async function criarPotenciaProduto(){
@@ -481,11 +505,21 @@ async function criarRitoProduto(){
   state.produtos.ritoId = data.id;
   loadTab();
 }
+async function criarCargoProduto(){
+  const input = document.getElementById('prod-novo-cargo');
+  const nome = input.value.trim();
+  if(!nome || !state.produtos.ritoId) return;
+  const { data, error } = await sb.from('cargos').insert({ nome, rito_id: state.produtos.ritoId }).select().single();
+  if(error){ alert(error.message); return; }
+  state.produtos.cargoId = data.id;
+  loadTab();
+}
 
 async function carregarProdutosFiltrados(){
   let q = sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem)').eq('ativo', true)
     .eq('potencia_id', state.produtos.potenciaId).eq('tipo_peca_id', state.produtos.tipoId);
   if(state.produtos.ritoId) q = q.eq('rito_id', state.produtos.ritoId);
+  if(state.produtos.cargoId) q = q.eq('cargo_id', state.produtos.cargoId);
   const { data: produtos, error } = await q.order('nome');
   const div = document.getElementById('prod-lista-produtos');
   if(!div) return;
@@ -493,21 +527,114 @@ async function carregarProdutosFiltrados(){
   div.innerHTML = `
     <h2 style="font-size:15px;">Produtos cadastrados</h2>
     ${(produtos||[]).map(f=>`
-      <div class="item">
+      <div class="item" onclick="abrirProduto('${f.id}')" style="cursor:pointer;">
         <div style="display:flex;gap:10px;align-items:center;">
           ${fichaThumbImg(f, 40)}
           <div><strong>${f.nome}</strong><div class="muted">${f.unidade_producao}</div></div>
         </div>
-        <button class="btn ghost sm" onclick="editarFotoFicha('${f.id}','${(f.nome||'').replace(/'/g,"\\'")}')">📷</button>
       </div>`).join('') || '<p class="muted">Nenhum produto cadastrado com essa combinação ainda.</p>'}
     <button class="btn block gold" style="margin-top:10px;" onclick="novoProdutoCompleto()">+ Novo produto</button>
   `;
 }
-function novoProdutoCompleto(){
+
+// listas de sugestão pros campos de descrição (aparecem como autocomplete, mas aceitam texto livre)
+// campos de descrição cujo valor vem de um catálogo pesquisável (tabela opcoes_descricao)
+const CAMPOS_CATALOGO = [
+  { campo: 'orlado_tipo', label: 'Orlado — tipo', placeholder: 'ex: Fita gorgurão' },
+  { campo: 'forro', label: 'Forro', placeholder: 'ex: Nylon preto' },
+  { campo: 'ferragem_tipo', label: 'Ferragens — tipo', placeholder: 'ex: Mosquete 4cm' },
+  { campo: 'ferragem_cor', label: 'Ferragens — cor', placeholder: 'ex: Dourado' },
+  { campo: 'elastico_tamanho', label: 'Elástico — tamanho', placeholder: 'ex: 3cm' },
+  { campo: 'elastico_cor', label: 'Elástico — cor', placeholder: 'ex: Preto' },
+];
+
+async function carregarOpcoesDescricao(){
+  const { data } = await sb.from('opcoes_descricao').select('campo,valor').order('valor');
+  const map = {};
+  (data||[]).forEach(r => { (map[r.campo] = map[r.campo]||[]).push(r.valor); });
+  window._prodOpcoes = map;
+}
+function chipsHtmlTexto(opcoes, valorAtual, prefix, campo){
+  return (opcoes||[]).map(v => `
+    <button type="button" class="chip ${v===valorAtual?'active':''}" data-nome="${v.toLowerCase()}" onclick="selecionarOpcaoDescricao('${prefix}','${campo}','${v.replace(/'/g,"\\'")}')">${v}</button>
+  `).join('') || '<p class="muted" style="padding:4px 0;">Nenhuma opção ainda — adicione uma.</p>';
+}
+function selecionarOpcaoDescricao(prefix, campo, valor){
+  document.getElementById(`${prefix}-${campo}`).value = valor;
+  document.querySelectorAll(`#${prefix}-chips-${campo} .chip`).forEach(el=>{
+    el.classList.toggle('active', el.textContent === valor);
+  });
+}
+async function adicionarOpcaoDescricao(prefix, campo){
+  const input = document.getElementById(`${prefix}-novo-${campo}`);
+  const valor = input.value.trim();
+  if(!valor) return;
+  const { error } = await sb.from('opcoes_descricao').upsert({ campo, valor }, { onConflict: 'campo,valor' });
+  if(error){ alert(error.message); return; }
+  window._prodOpcoes[campo] = window._prodOpcoes[campo] || [];
+  if(!window._prodOpcoes[campo].includes(valor)){
+    window._prodOpcoes[campo].push(valor);
+    window._prodOpcoes[campo].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  }
+  document.getElementById(`${prefix}-chips-${campo}`).innerHTML = chipsHtmlTexto(window._prodOpcoes[campo], valor, prefix, campo);
+  selecionarOpcaoDescricao(prefix, campo, valor);
+  input.value = '';
+}
+function campoBuscaHtml(prefix, campo, label, placeholder, valorAtual){
+  const opcoes = (window._prodOpcoes||{})[campo] || [];
+  return `
+    <label>${label}</label>
+    <input placeholder="Buscar ${label.toLowerCase()}..." oninput="filtrarChips(this.id,'${prefix}-chips-${campo}')" id="${prefix}-busca-${campo}">
+    <div id="${prefix}-chips-${campo}" class="chips">
+      ${chipsHtmlTexto(opcoes, valorAtual, prefix, campo)}
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <input id="${prefix}-novo-${campo}" placeholder="Adicionar ${placeholder}">
+      <button type="button" class="btn ghost sm" onclick="adicionarOpcaoDescricao('${prefix}','${campo}')">+ Adicionar</button>
+    </div>
+    <input type="hidden" id="${prefix}-${campo}" value="${(valorAtual||'').replace(/"/g,'&quot;')}">
+  `;
+}
+function camposDescricaoHtml(prefix, f){
+  f = f || {};
+  const v = (x) => x==null ? '' : String(x).replace(/"/g,'&quot;');
+  return `
+    <h2 style="font-size:15px;margin-top:18px;">Descrição do produto</h2>
+    ${campoBuscaHtml(prefix, 'orlado_tipo', 'Orlado — tipo', 'tipo de orlado', f.orlado_tipo)}
+    <label>Orlado — cor / modelo</label>
+    <input id="${prefix}-orlado_cor" value="${v(f.orlado_cor)}" placeholder="Ex: branca, cor 92...">
+
+    ${campoBuscaHtml(prefix, 'forro', 'Forro', 'tipo de forro', f.forro)}
+    ${campoBuscaHtml(prefix, 'ferragem_tipo', 'Ferragens — tipo', 'tipo de ferragem', f.ferragem_tipo)}
+    ${campoBuscaHtml(prefix, 'ferragem_cor', 'Ferragens — cor', 'cor de ferragem', f.ferragem_cor)}
+    ${campoBuscaHtml(prefix, 'elastico_tamanho', 'Elástico — tamanho', 'tamanho de elástico', f.elastico_tamanho)}
+    ${campoBuscaHtml(prefix, 'elastico_cor', 'Elástico — cor', 'cor de elástico', f.elastico_cor)}
+
+    <label>Outros aviamentos</label>
+    <textarea id="${prefix}-outros_aviamentos" rows="2" placeholder="Qualquer outro detalhe...">${v(f.outros_aviamentos)}</textarea>
+  `;
+}
+function lerCamposDescricao(prefix){
+  const g = (id) => document.getElementById(id)?.value.trim() || null;
+  return {
+    orlado_tipo: g(`${prefix}-orlado_tipo`),
+    orlado_cor: g(`${prefix}-orlado_cor`),
+    forro: g(`${prefix}-forro`),
+    ferragem_tipo: g(`${prefix}-ferragem_tipo`),
+    ferragem_cor: g(`${prefix}-ferragem_cor`),
+    elastico_tamanho: g(`${prefix}-elastico_tamanho`),
+    elastico_cor: g(`${prefix}-elastico_cor`),
+    outros_aviamentos: g(`${prefix}-outros_aviamentos`),
+  };
+}
+
+async function novoProdutoCompleto(){
+  await carregarOpcoesDescricao();
   const potNome = (window._prodPotencias||[]).find(p=>p.id===state.produtos.potenciaId)?.nome || '';
   const tipoNome = (window._prodTipos||[]).find(t=>t.id===state.produtos.tipoId)?.nome || '';
   const ritoNome = (window._prodRitos||[]).find(r=>r.id===state.produtos.ritoId)?.nome || '';
-  const sugestao = [tipoNome, potNome, ritoNome].filter(Boolean).join(' ');
+  const cargoNome = (window._prodCargos||[]).find(c=>c.id===state.produtos.cargoId)?.nome || '';
+  const sugestao = [tipoNome, cargoNome, potNome, ritoNome].filter(Boolean).join(' ');
   showModal(`
     <h2>Novo produto <button class="close" onclick="closeModal()">&times;</button></h2>
     <label>Nome do produto</label>
@@ -516,6 +643,7 @@ function novoProdutoCompleto(){
     <input id="npf-unidade" placeholder="peça, par, avental...">
     <label>Foto do modelo (opcional)</label>
     <input type="file" id="npf-foto" accept="image/*" capture="environment">
+    ${camposDescricaoHtml('npf', {})}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarProdutoCompleto()">Salvar</button>
     <p id="npf-msg" class="error"></p>
   `);
@@ -530,6 +658,8 @@ async function salvarProdutoCompleto(){
     potencia_id: state.produtos.potenciaId,
     tipo_peca_id: state.produtos.tipoId,
     rito_id: state.produtos.ritoId || null,
+    cargo_id: state.produtos.cargoId || null,
+    ...lerCamposDescricao('npf'),
   };
   const { data, error } = await sb.from('fichas_tecnicas').insert(payload).select().single();
   if(error){ msg.textContent = error.message; return; }
@@ -537,6 +667,57 @@ async function salvarProdutoCompleto(){
   if(file){
     const { error: fotoErr } = await uploadFotoFicha(data.id, file);
     if(fotoErr){ msg.textContent = 'Produto salvo, mas a foto falhou: ' + fotoErr.message; }
+  }
+  closeModal();
+  carregarProdutosFiltrados();
+}
+
+// editor completo de um produto já cadastrado (nome, descrição e fotos)
+async function abrirProduto(fichaId){
+  await carregarOpcoesDescricao();
+  const { data: f } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(*)').eq('id', fichaId).single();
+  const fotos = (f.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
+  showModal(`
+    <h2>${f.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Nome do produto</label>
+    <input id="epf-nome" value="${(f.nome||'').replace(/"/g,'&quot;')}">
+    <label>Unidade de produção</label>
+    <input id="epf-unidade" value="${(f.unidade_producao||'').replace(/"/g,'&quot;')}">
+    ${camposDescricaoHtml('epf', f)}
+
+    <h2 style="font-size:15px;margin-top:18px;">Fotos</h2>
+    <div id="epf-fotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      ${fotos.map(ft=>`
+        <div style="position:relative;">
+          <img src="${ft.url}" class="foto-thumb" style="width:70px;height:70px;">
+          <button class="btn danger sm" style="position:absolute;top:-6px;right:-6px;padding:1px 7px;border-radius:50%;" onclick="event.stopPropagation(); removerFotoFichaInline('${ft.id}','${fichaId}')">&times;</button>
+        </div>`).join('') || '<p class="muted">Nenhuma foto ainda.</p>'}
+    </div>
+    <input type="file" id="epf-foto" accept="image/*" capture="environment">
+
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoProduto('${fichaId}')">Salvar alterações</button>
+    <p id="epf-msg" class="error"></p>
+  `);
+}
+async function removerFotoFichaInline(fotoId, fichaId){
+  await sb.from('ficha_fotos').delete().eq('id', fotoId);
+  abrirProduto(fichaId);
+}
+async function salvarEdicaoProduto(fichaId){
+  const msg = document.getElementById('epf-msg');
+  const nome = document.getElementById('epf-nome').value.trim();
+  if(!nome){ msg.textContent = 'Informe o nome.'; return; }
+  const patch = {
+    nome,
+    unidade_producao: document.getElementById('epf-unidade').value.trim() || 'peça',
+    ...lerCamposDescricao('epf'),
+  };
+  const { error } = await sb.from('fichas_tecnicas').update(patch).eq('id', fichaId);
+  if(error){ msg.textContent = error.message; return; }
+  const file = document.getElementById('epf-foto').files[0];
+  if(file){
+    const { error: fotoErr } = await uploadFotoFicha(fichaId, file);
+    if(fotoErr){ msg.textContent = 'Salvo, mas a foto falhou: ' + fotoErr.message; return; }
   }
   closeModal();
   carregarProdutosFiltrados();
