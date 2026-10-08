@@ -394,35 +394,32 @@ async function renderProdutos(){
 
   let html = `
     <h2 style="font-size:15px;">Potência</h2>
-    <input id="prod-busca-potencia" placeholder="Buscar potência..." oninput="filtrarChips('prod-busca-potencia','prod-lista-potencia')">
+    <div class="row">
+      <input id="prod-busca-potencia" placeholder="Buscar ou digitar nova potência..." oninput="filtrarChips('prod-busca-potencia','prod-lista-potencia')">
+      <button class="btn ghost sm" onclick="criarPotenciaProduto()">+ Adicionar</button>
+    </div>
     <div id="prod-lista-potencia" class="chips">
       ${chipsHtml(potencias, state.produtos.potenciaId, 'selecionarPotenciaProduto')}
-    </div>
-    <div class="row" style="margin-top:6px;">
-      <input id="prod-nova-potencia" placeholder="Nome da nova potência (ex: GLEMT)">
-      <button class="btn ghost sm" onclick="criarPotenciaProduto()">+ Adicionar</button>
     </div>`;
 
   if(state.produtos.potenciaId){
     html += `
     <h2 style="font-size:15px;margin-top:22px;">Tipo de peça</h2>
-    <input id="prod-busca-tipo" placeholder="Buscar tipo de peça..." oninput="filtrarChips('prod-busca-tipo','prod-lista-tipo')">
+    <div class="row">
+      <input id="prod-busca-tipo" placeholder="Buscar ou digitar novo tipo..." oninput="filtrarChips('prod-busca-tipo','prod-lista-tipo')">
+      <button class="btn ghost sm" onclick="criarTipoProduto()">+ Adicionar</button>
+    </div>
     <div id="prod-lista-tipo" class="chips">
       ${chipsHtml(tipos, state.produtos.tipoId, 'selecionarTipoProduto')}
     </div>
-    <div class="row" style="margin-top:6px;">
-      <input id="prod-novo-tipo" placeholder="Nome do novo tipo (ex: Punho)">
-      <button class="btn ghost sm" onclick="criarTipoProduto()">+ Adicionar</button>
-    </div>
 
     <h2 style="font-size:15px;margin-top:22px;">Rito</h2>
-    <input id="prod-busca-rito" placeholder="Buscar rito..." oninput="filtrarChips('prod-busca-rito','prod-lista-rito')">
+    <div class="row">
+      <input id="prod-busca-rito" placeholder="Buscar ou digitar novo rito..." oninput="filtrarChips('prod-busca-rito','prod-lista-rito')">
+      <button class="btn ghost sm" onclick="criarRitoProduto()">+ Adicionar</button>
+    </div>
     <div id="prod-lista-rito" class="chips">
       ${chipsHtml(ritos, state.produtos.ritoId, 'selecionarRitoProduto')}
-    </div>
-    <div class="row" style="margin-top:6px;">
-      <input id="prod-novo-rito" placeholder="Nome do novo rito (ex: REAA)">
-      <button class="btn ghost sm" onclick="criarRitoProduto()">+ Adicionar</button>
     </div>
     ${state.produtos.ritoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.ritoId=null; state.produtos.cargoId=null; loadTab();">Limpar rito selecionado</a></p>` : ''}
     `;
@@ -435,13 +432,12 @@ async function renderProdutos(){
     window._prodCargos = cargos;
     html += `
     <h2 style="font-size:15px;margin-top:22px;">Cargo</h2>
-    <input id="prod-busca-cargo" placeholder="Buscar cargo..." oninput="filtrarChips('prod-busca-cargo','prod-lista-cargo')">
+    <div class="row">
+      <input id="prod-busca-cargo" placeholder="Buscar ou digitar novo cargo..." oninput="filtrarChips('prod-busca-cargo','prod-lista-cargo')">
+      <button class="btn ghost sm" onclick="criarCargoProduto()">+ Adicionar</button>
+    </div>
     <div id="prod-lista-cargo" class="chips">
       ${chipsHtml(cargos, state.produtos.cargoId, 'selecionarCargoProduto')}
-    </div>
-    <div class="row" style="margin-top:6px;">
-      <input id="prod-novo-cargo" placeholder="Nome do novo cargo (ex: Venerável Mestre)">
-      <button class="btn ghost sm" onclick="criarCargoProduto()">+ Adicionar</button>
     </div>
     ${state.produtos.cargoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.cargoId=null; loadTab();">Limpar cargo selecionado</a></p>` : ''}
     `;
@@ -476,42 +472,44 @@ function selecionarCargoProduto(id){
   state.produtos.cargoId = id;
   loadTab();
 }
+async function criarOuSelecionarCatalogo(tabela, nome, extraCols, listaExistente, fnSelecionar){
+  const existente = (listaExistente||[]).find(x => x.nome.toLowerCase() === nome.toLowerCase());
+  if(existente){ fnSelecionar(existente.id); return true; }
+  const { data, error } = await sb.from(tabela).insert({ nome, ...extraCols }).select().single();
+  if(error){ alert(error.message); return false; }
+  fnSelecionar(data.id);
+  return true;
+}
 async function criarPotenciaProduto(){
-  const input = document.getElementById('prod-nova-potencia');
-  const nome = input.value.trim();
+  const nome = document.getElementById('prod-busca-potencia').value.trim();
   if(!nome) return;
-  const { data, error } = await sb.from('potencias').insert({ nome }).select().single();
-  if(error){ alert(error.message); return; }
-  state.produtos.potenciaId = data.id;
-  state.produtos.tipoId = null;
-  state.produtos.ritoId = null;
+  await criarOuSelecionarCatalogo('potencias', nome, {}, window._prodPotencias, (id)=>{
+    state.produtos.potenciaId = id; state.produtos.tipoId = null; state.produtos.ritoId = null;
+  });
   loadTab();
 }
 async function criarTipoProduto(){
-  const input = document.getElementById('prod-novo-tipo');
-  const nome = input.value.trim();
+  const nome = document.getElementById('prod-busca-tipo').value.trim();
   if(!nome) return;
-  const { data, error } = await sb.from('tipos_peca').insert({ nome }).select().single();
-  if(error){ alert(error.message); return; }
-  state.produtos.tipoId = data.id;
+  await criarOuSelecionarCatalogo('tipos_peca', nome, {}, window._prodTipos, (id)=>{
+    state.produtos.tipoId = id;
+  });
   loadTab();
 }
 async function criarRitoProduto(){
-  const input = document.getElementById('prod-novo-rito');
-  const nome = input.value.trim();
+  const nome = document.getElementById('prod-busca-rito').value.trim();
   if(!nome || !state.produtos.potenciaId) return;
-  const { data, error } = await sb.from('ritos').insert({ nome, potencia_id: state.produtos.potenciaId }).select().single();
-  if(error){ alert(error.message); return; }
-  state.produtos.ritoId = data.id;
+  await criarOuSelecionarCatalogo('ritos', nome, { potencia_id: state.produtos.potenciaId }, window._prodRitos, (id)=>{
+    state.produtos.ritoId = id;
+  });
   loadTab();
 }
 async function criarCargoProduto(){
-  const input = document.getElementById('prod-novo-cargo');
-  const nome = input.value.trim();
+  const nome = document.getElementById('prod-busca-cargo').value.trim();
   if(!nome || !state.produtos.ritoId) return;
-  const { data, error } = await sb.from('cargos').insert({ nome, rito_id: state.produtos.ritoId }).select().single();
-  if(error){ alert(error.message); return; }
-  state.produtos.cargoId = data.id;
+  await criarOuSelecionarCatalogo('cargos', nome, { rito_id: state.produtos.ritoId }, window._prodCargos, (id)=>{
+    state.produtos.cargoId = id;
+  });
   loadTab();
 }
 
@@ -566,31 +564,29 @@ function selecionarOpcaoDescricao(prefix, campo, valor){
   });
 }
 async function adicionarOpcaoDescricao(prefix, campo){
-  const input = document.getElementById(`${prefix}-novo-${campo}`);
+  const input = document.getElementById(`${prefix}-busca-${campo}`);
   const valor = input.value.trim();
   if(!valor) return;
+  const existente = (window._prodOpcoes[campo]||[]).find(v => v.toLowerCase() === valor.toLowerCase());
+  if(existente){ selecionarOpcaoDescricao(prefix, campo, existente); return; }
   const { error } = await sb.from('opcoes_descricao').upsert({ campo, valor }, { onConflict: 'campo,valor' });
   if(error){ alert(error.message); return; }
   window._prodOpcoes[campo] = window._prodOpcoes[campo] || [];
-  if(!window._prodOpcoes[campo].includes(valor)){
-    window._prodOpcoes[campo].push(valor);
-    window._prodOpcoes[campo].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  }
+  window._prodOpcoes[campo].push(valor);
+  window._prodOpcoes[campo].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   document.getElementById(`${prefix}-chips-${campo}`).innerHTML = chipsHtmlTexto(window._prodOpcoes[campo], valor, prefix, campo);
   selecionarOpcaoDescricao(prefix, campo, valor);
-  input.value = '';
 }
 function campoBuscaHtml(prefix, campo, label, placeholder, valorAtual){
   const opcoes = (window._prodOpcoes||{})[campo] || [];
   return `
     <label>${label}</label>
-    <input placeholder="Buscar ${label.toLowerCase()}..." oninput="filtrarChips(this.id,'${prefix}-chips-${campo}')" id="${prefix}-busca-${campo}">
+    <div class="row">
+      <input placeholder="Buscar ou digitar novo(a) ${placeholder}..." oninput="filtrarChips(this.id,'${prefix}-chips-${campo}')" id="${prefix}-busca-${campo}">
+      <button type="button" class="btn ghost sm" onclick="adicionarOpcaoDescricao('${prefix}','${campo}')">+ Adicionar</button>
+    </div>
     <div id="${prefix}-chips-${campo}" class="chips">
       ${chipsHtmlTexto(opcoes, valorAtual, prefix, campo)}
-    </div>
-    <div class="row" style="margin-top:6px;">
-      <input id="${prefix}-novo-${campo}" placeholder="Adicionar ${placeholder}">
-      <button type="button" class="btn ghost sm" onclick="adicionarOpcaoDescricao('${prefix}','${campo}')">+ Adicionar</button>
     </div>
     <input type="hidden" id="${prefix}-${campo}" value="${(valorAtual||'').replace(/"/g,'&quot;')}">
   `;
@@ -778,9 +774,13 @@ async function npMostrarForm(){
     </div>
     <label>Prazo</label>
     <input type="date" id="np-prazo" value="${npFormCache?.prazo||''}">
-    <label class="checkline" style="margin-top:12px;"><input type="checkbox" id="np-urgente" ${npFormCache?.urgente?'checked':''}> Urgente</label>
-    <label>Observações</label>
-    <textarea id="np-obs" rows="2">${npFormCache?.obs||''}</textarea>
+
+    <p class="muted" style="margin-top:8px; display:${(npFormCache?.urgente || npFormCache?.obs) ? 'none' : 'block'};" id="np-toggle-detalhes-wrap"><a href="#" onclick="event.preventDefault(); document.getElementById('np-detalhes').style.display='block'; document.getElementById('np-toggle-detalhes-wrap').style.display='none';">+ mais detalhes (urgente, observações)</a></p>
+    <div id="np-detalhes" style="display:${(npFormCache?.urgente || npFormCache?.obs) ? 'block' : 'none'};">
+      <label class="checkline" style="margin-top:4px;"><input type="checkbox" id="np-urgente" ${npFormCache?.urgente?'checked':''}> Urgente</label>
+      <label>Observações</label>
+      <textarea id="np-obs" rows="2">${npFormCache?.obs||''}</textarea>
+    </div>
 
     <h2 style="font-size:15px;margin-top:20px;">Peças do pedido</h2>
     <div id="np-pecas-lista"></div>
@@ -795,6 +795,23 @@ async function npMostrarForm(){
   renderNpPecasList();
 }
 function npFecharTudo(){ npPecas = []; npFormCache = null; closeModal(); }
+function responsavelSelectHtml(prefix, costureiras, faccionistas, selCostureiraId, selFaccionistaId){
+  const selVal = selCostureiraId ? `c:${selCostureiraId}` : (selFaccionistaId ? `f:${selFaccionistaId}` : '');
+  return `
+    <label>Quem vai fazer</label>
+    <select id="${prefix}-responsavel">
+      <option value="">—</option>
+      ${(costureiras||[]).length ? `<optgroup label="Costureiras">${costureiras.map(c=>`<option value="c:${c.id}" ${selVal===`c:${c.id}`?'selected':''}>${c.nome}</option>`).join('')}</optgroup>` : ''}
+      ${(faccionistas||[]).length ? `<optgroup label="Faccionistas">${faccionistas.map(c=>`<option value="f:${c.id}" ${selVal===`f:${c.id}`?'selected':''}>${c.nome}</option>`).join('')}</optgroup>` : ''}
+    </select>
+  `;
+}
+function lerResponsavel(prefix){
+  const v = document.getElementById(`${prefix}-responsavel`).value;
+  if(!v) return { costureira_id: null, faccionista_id: null };
+  const [tipo, id] = v.split(':');
+  return tipo==='c' ? { costureira_id: id, faccionista_id: null } : { costureira_id: null, faccionista_id: id };
+}
 function renderNpPecasList(){
   const div = document.getElementById('np-pecas-lista');
   if(!div) return;
@@ -842,11 +859,8 @@ async function npAbrirSeletorPeca(){
     <label>Quantidade</label>
     <input type="number" id="np2-qtd" value="1" min="1">
     <label>Dia de produção</label>
-    <input type="date" id="np2-dia">
-    <label>Costureira</label>
-    <select id="np2-costureira"><option value="">—</option>${(costureiras||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
-    <label>Faccionista</label>
-    <select id="np2-faccionista"><option value="">—</option>${(faccionistas||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+    <input type="date" id="np2-dia" value="${todayISO()}">
+    ${responsavelSelectHtml('np2', costureiras, faccionistas)}
     <button class="btn block gold" style="margin-top:16px;" onclick="npConfirmarPeca()">Adicionar à lista</button>
     <p id="np2-msg" class="error"></p>
   `);
@@ -891,12 +905,11 @@ async function npConfirmarPeca(){
   const f = (window._npFichasCache||[]).find(x=>x.id===ficha_id);
   const quantidade = Number(document.getElementById('np2-qtd').value) || 1;
   const dia_producao = document.getElementById('np2-dia').value || null;
-  const costureira_id = document.getElementById('np2-costureira').value || null;
-  const faccionista_id = document.getElementById('np2-faccionista').value || null;
-  const costureiraSel = document.getElementById('np2-costureira');
-  const faccionistaSel = document.getElementById('np2-faccionista');
-  const costureiraNome = costureira_id ? costureiraSel.options[costureiraSel.selectedIndex].textContent : '';
-  const faccionistaNome = faccionista_id ? faccionistaSel.options[faccionistaSel.selectedIndex].textContent : '';
+  const { costureira_id, faccionista_id } = lerResponsavel('np2');
+  const respSel = document.getElementById('np2-responsavel');
+  const respNome = respSel.value ? respSel.options[respSel.selectedIndex].textContent : '';
+  const costureiraNome = costureira_id ? respNome : '';
+  const faccionistaNome = faccionista_id ? respNome : '';
 
   let valor_costureira = null, valor_faccionista = null;
   if(costureira_id){
@@ -986,11 +999,8 @@ async function adicionarPeca(pedidoId){
     <label>Quantidade</label>
     <input type="number" id="pc-qtd" value="1" min="1">
     <label>Dia de produção</label>
-    <input type="date" id="pc-dia">
-    <label>Costureira</label>
-    <select id="pc-costureira"><option value="">—</option>${(costureiras||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
-    <label>Faccionista</label>
-    <select id="pc-faccionista"><option value="">—</option>${(faccionistas||[]).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+    <input type="date" id="pc-dia" value="${todayISO()}">
+    ${responsavelSelectHtml('pc', costureiras, faccionistas)}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarPeca('${pedidoId}')">Salvar peça</button>
     <p id="pc-msg" class="error"></p>
   `);
@@ -1008,8 +1018,7 @@ async function salvarPeca(pedidoId){
   if(!ficha_id){ msg.textContent = 'Escolha o tipo de peça.'; return; }
   const quantidade = Number(document.getElementById('pc-qtd').value) || 1;
   const dia_producao = document.getElementById('pc-dia').value || null;
-  const costureira_id = document.getElementById('pc-costureira').value || null;
-  const faccionista_id = document.getElementById('pc-faccionista').value || null;
+  const { costureira_id, faccionista_id } = lerResponsavel('pc');
 
   let valor_costureira = null, valor_faccionista = null;
   if(costureira_id){
@@ -1072,10 +1081,7 @@ async function editarPeca(id){
     <select id="ep-status">
       ${Object.keys(STATUS_LABEL).map(s=>`<option value="${s}" ${s===p.status?'selected':''}>${STATUS_LABEL[s]}</option>`).join('')}
     </select>
-    <label>Costureira</label>
-    <select id="ep-costureira"><option value="">—</option>${(costureiras||[]).map(c=>`<option value="${c.id}" ${c.id===p.costureira_id?'selected':''}>${c.nome}</option>`).join('')}</select>
-    <label>Faccionista</label>
-    <select id="ep-faccionista"><option value="">—</option>${(faccionistas||[]).map(c=>`<option value="${c.id}" ${c.id===p.faccionista_id?'selected':''}>${c.nome}</option>`).join('')}</select>
+    ${responsavelSelectHtml('ep', costureiras, faccionistas, p.costureira_id, p.faccionista_id)}
     <div class="row" style="margin-top:16px;">
       <button class="btn ghost" onclick="excluirPeca('${id}')">Excluir</button>
       <button class="btn gold" onclick="salvarEdicaoPeca('${id}')">Salvar</button>
@@ -1088,8 +1094,7 @@ async function salvarEdicaoPeca(id){
     quantidade: Number(document.getElementById('ep-qtd').value) || 1,
     dia_producao: document.getElementById('ep-dia').value || null,
     status: document.getElementById('ep-status').value,
-    costureira_id: document.getElementById('ep-costureira').value || null,
-    faccionista_id: document.getElementById('ep-faccionista').value || null,
+    ...lerResponsavel('ep'),
   };
   const { error } = await sb.from('pecas').update(patch).eq('id', id);
   if(error){ document.getElementById('ep-msg').textContent = error.message; return; }
