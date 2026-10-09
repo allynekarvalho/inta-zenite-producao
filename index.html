@@ -94,6 +94,9 @@
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
   .chip{border:1px solid var(--border);background:var(--card);color:var(--ink);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
   .chip.active{background:var(--royal);color:#fff;border-color:var(--royal);}
+  .chip-foto{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;border-radius:12px;}
+  .chip-foto img{width:48px;height:48px;border-radius:8px;object-fit:cover;}
+  .chip-foto span{font-size:11px;font-weight:600;}
   .error{color:var(--danger);font-size:13px;margin-top:6px;}
 </style>
 </head>
@@ -546,36 +549,69 @@ const CAMPOS_CATALOGO = [
   { campo: 'elastico_cor', label: 'Elástico — cor', placeholder: 'ex: Preto' },
 ];
 
+async function uploadParaStorage(prefixoPasta, file){
+  const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+  const path = `${prefixoPasta}/${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from('fotos').upload(path, file, { upsert: true, contentType: file.type });
+  if(error) return { error };
+  const { data } = sb.storage.from('fotos').getPublicUrl(path);
+  return { url: data.publicUrl };
+}
+// extrai um rótulo curto (ex: "4cm") pra mostrar embaixo da foto, quando o nome tiver medida
+function rotuloCurto(valor){
+  const m = String(valor).match(/\d+\s?cm/i);
+  return m ? m[0].replace(/\s/,'') : valor;
+}
 async function carregarOpcoesDescricao(){
-  const { data } = await sb.from('opcoes_descricao').select('campo,valor').order('valor');
+  const { data } = await sb.from('opcoes_descricao').select('campo,valor,foto_url').order('valor');
   const map = {};
-  (data||[]).forEach(r => { (map[r.campo] = map[r.campo]||[]).push(r.valor); });
+  (data||[]).forEach(r => { (map[r.campo] = map[r.campo]||[]).push({ valor: r.valor, foto_url: r.foto_url }); });
   window._prodOpcoes = map;
 }
 function chipsHtmlTexto(opcoes, valorAtual, prefix, campo){
-  return (opcoes||[]).map(v => `
-    <button type="button" class="chip ${v===valorAtual?'active':''}" data-nome="${v.toLowerCase()}" onclick="selecionarOpcaoDescricao('${prefix}','${campo}','${v.replace(/'/g,"\\'")}')">${v}</button>
-  `).join('') || '<p class="muted" style="padding:4px 0;">Nenhuma opção ainda — adicione uma.</p>';
+  return (opcoes||[]).map(o => {
+    const valor = o.valor;
+    const ativo = valor===valorAtual ? 'active' : '';
+    const onclick = `selecionarOpcaoDescricao('${prefix}','${campo}','${valor.replace(/'/g,"\\'")}')`;
+    if(o.foto_url){
+      return `
+        <button type="button" class="chip chip-foto ${ativo}" data-nome="${valor.toLowerCase()}" data-valor="${valor.replace(/"/g,'&quot;')}" onclick="${onclick}">
+          <img src="${o.foto_url}" alt="">
+          <span>${rotuloCurto(valor)}</span>
+        </button>`;
+    }
+    return `<button type="button" class="chip ${ativo}" data-nome="${valor.toLowerCase()}" data-valor="${valor.replace(/"/g,'&quot;')}" onclick="${onclick}">${valor}</button>`;
+  }).join('') || '<p class="muted" style="padding:4px 0;">Nenhuma opção ainda — adicione uma.</p>';
 }
 function selecionarOpcaoDescricao(prefix, campo, valor){
   document.getElementById(`${prefix}-${campo}`).value = valor;
   document.querySelectorAll(`#${prefix}-chips-${campo} .chip`).forEach(el=>{
-    el.classList.toggle('active', el.textContent === valor);
+    el.classList.toggle('active', el.dataset.valor === valor);
   });
 }
 async function adicionarOpcaoDescricao(prefix, campo){
   const input = document.getElementById(`${prefix}-busca-${campo}`);
   const valor = input.value.trim();
   if(!valor) return;
-  const existente = (window._prodOpcoes[campo]||[]).find(v => v.toLowerCase() === valor.toLowerCase());
-  if(existente){ selecionarOpcaoDescricao(prefix, campo, existente); return; }
-  const { error } = await sb.from('opcoes_descricao').upsert({ campo, valor }, { onConflict: 'campo,valor' });
+  const existente = (window._prodOpcoes[campo]||[]).find(o => o.valor.toLowerCase() === valor.toLowerCase());
+  if(existente){ selecionarOpcaoDescricao(prefix, campo, existente.valor); return; }
+  let foto_url = null;
+  const fotoInput = document.getElementById(`${prefix}-foto-${campo}`);
+  const file = fotoInput?.files[0];
+  if(file){
+    const up = await uploadParaStorage(`opcoes/${campo}`, file);
+    if(up.error){ alert('Falhou ao enviar a foto: ' + up.error.message); return; }
+    foto_url = up.url;
+  }
+  const { error } = await sb.from('opcoes_descricao').upsert({ campo, valor, foto_url }, { onConflict: 'campo,valor' });
   if(error){ alert(error.message); return; }
   window._prodOpcoes[campo] = window._prodOpcoes[campo] || [];
-  window._prodOpcoes[campo].push(valor);
-  window._prodOpcoes[campo].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  window._prodOpcoes[campo].push({ valor, foto_url });
+  window._prodOpcoes[campo].sort((a,b)=>a.valor.localeCompare(b.valor,'pt-BR'));
   document.getElementById(`${prefix}-chips-${campo}`).innerHTML = chipsHtmlTexto(window._prodOpcoes[campo], valor, prefix, campo);
   selecionarOpcaoDescricao(prefix, campo, valor);
+  input.value = '';
+  if(fotoInput) fotoInput.value = '';
 }
 function campoBuscaHtml(prefix, campo, label, placeholder, valorAtual){
   const opcoes = (window._prodOpcoes||{})[campo] || [];
@@ -588,6 +624,8 @@ function campoBuscaHtml(prefix, campo, label, placeholder, valorAtual){
     <div id="${prefix}-chips-${campo}" class="chips">
       ${chipsHtmlTexto(opcoes, valorAtual, prefix, campo)}
     </div>
+    <label class="muted" style="font-size:12px;margin-top:2px;">Foto (opcional, só pra quando for cadastrar nova opção)</label>
+    <input type="file" id="${prefix}-foto-${campo}" accept="image/*" capture="environment">
     <input type="hidden" id="${prefix}-${campo}" value="${(valorAtual||'').replace(/"/g,'&quot;')}">
   `;
 }
@@ -597,8 +635,10 @@ function camposDescricaoHtml(prefix, f){
   return `
     <h2 style="font-size:15px;margin-top:18px;">Descrição do produto</h2>
     ${campoBuscaHtml(prefix, 'orlado_tipo', 'Orlado — tipo', 'tipo de orlado', f.orlado_tipo)}
-    <label>Orlado — cor / modelo</label>
-    <input id="${prefix}-orlado_cor" value="${v(f.orlado_cor)}" placeholder="Ex: branca, cor 92...">
+    <label>Orlado — cor</label>
+    <input id="${prefix}-orlado_cor" value="${v(f.orlado_cor)}" placeholder="Ex: branca">
+    <label>Orlado — numeração</label>
+    <input id="${prefix}-orlado_numero" value="${v(f.orlado_numero)}" placeholder="Ex: 92">
 
     ${campoBuscaHtml(prefix, 'forro', 'Forro', 'tipo de forro', f.forro)}
     ${campoBuscaHtml(prefix, 'ferragem_tipo', 'Ferragens — tipo', 'tipo de ferragem', f.ferragem_tipo)}
@@ -615,6 +655,7 @@ function lerCamposDescricao(prefix){
   return {
     orlado_tipo: g(`${prefix}-orlado_tipo`),
     orlado_cor: g(`${prefix}-orlado_cor`),
+    orlado_numero: g(`${prefix}-orlado_numero`),
     forro: g(`${prefix}-forro`),
     ferragem_tipo: g(`${prefix}-ferragem_tipo`),
     ferragem_cor: g(`${prefix}-ferragem_cor`),
@@ -1222,8 +1263,11 @@ async function renderMateriais(){
     const baixo = Number(m.estoque_atual) <= Number(m.estoque_minimo);
     return `
     <div class="card" onclick="editarMaterial('${m.id}')" style="cursor:pointer;">
-      <div style="display:flex;justify-content:space-between;">
-        <strong>${m.nome}</strong>
+      <div style="display:flex;gap:10px;justify-content:space-between;">
+        <div style="display:flex;gap:10px;align-items:center;">
+          ${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:40px;height:40px;">` : ''}
+          <strong>${m.nome}</strong>
+        </div>
         ${baixo ? '<span class="pill urgente">Estoque baixo</span>' : ''}
       </div>
       <div class="muted">${m.fornecedores?.nome || 'Sem fornecedor'} ${m.referencia?('· ref '+m.referencia):''}</div>
@@ -1232,8 +1276,29 @@ async function renderMateriais(){
   }).join('') || '<div class="card center muted">Nenhum material cadastrado.</div>';
   c.innerHTML = html;
 }
+async function carregarOpcoesComFoto(){
+  const { data } = await sb.from('opcoes_descricao').select('campo,valor,foto_url').not('foto_url', 'is', null).order('valor');
+  return data||[];
+}
+function fotoMaterialPickerHtml(opcoesComFoto, fotoAtual){
+  return `
+    <label>Foto</label>
+    <div id="nm-foto-preview" style="margin-bottom:6px;">
+      ${fotoAtual ? `<img src="${fotoAtual}" class="foto-thumb" style="width:70px;height:70px;">` : '<p class="muted">Sem foto ainda.</p>'}
+    </div>
+    <input type="file" id="nm-foto" accept="image/*" capture="environment">
+    ${opcoesComFoto.length ? `
+    <label style="margin-top:8px;">Ou reaproveitar foto já cadastrada (ferragens, forro, etc.)</label>
+    <select id="nm-foto-opcao">
+      <option value="">— nenhuma —</option>
+      ${opcoesComFoto.map(o=>`<option value="${o.foto_url}">${o.campo}: ${o.valor}</option>`).join('')}
+    </select>` : ''}
+    <input type="hidden" id="nm-foto-atual" value="${fotoAtual||''}">
+  `;
+}
 async function novoMaterial(){
   const { data: fornecedores } = await sb.from('fornecedores').select('*').order('nome');
+  const opcoesComFoto = await carregarOpcoesComFoto();
   showModal(`
     <h2>Novo material <button class="close" onclick="closeModal()">&times;</button></h2>
     <label>Nome</label><input id="nm-nome" placeholder="Ex: Fita gorgurão 5cm cor 92">
@@ -1248,6 +1313,7 @@ async function novoMaterial(){
     <label>Referência com o fornecedor</label><input id="nm-ref">
     <label>Estoque atual</label><input id="nm-estoque" type="number" step="0.01" value="0">
     <label>Estoque mínimo (alerta)</label><input id="nm-minimo" type="number" step="0.01" value="0">
+    ${fotoMaterialPickerHtml(opcoesComFoto, null)}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarMaterial()">Salvar</button>
     <p id="nm-msg" class="error"></p>
   `);
@@ -1263,6 +1329,16 @@ async function salvarMaterial(){
     if(error){ msg.textContent = error.message; return; }
     fornecedor_id = data.id;
   }
+  let foto_url = document.getElementById('nm-foto-atual').value || null;
+  const file = document.getElementById('nm-foto').files[0];
+  if(file){
+    const up = await uploadParaStorage('materiais', file);
+    if(up.error){ msg.textContent = 'Falhou ao enviar a foto: ' + up.error.message; return; }
+    foto_url = up.url;
+  } else {
+    const opcaoFoto = document.getElementById('nm-foto-opcao')?.value;
+    if(opcaoFoto) foto_url = opcaoFoto;
+  }
   const payload = {
     nome,
     unidade: document.getElementById('nm-unidade').value,
@@ -1270,6 +1346,7 @@ async function salvarMaterial(){
     referencia: document.getElementById('nm-ref').value,
     estoque_atual: Number(document.getElementById('nm-estoque').value) || 0,
     estoque_minimo: Number(document.getElementById('nm-minimo').value) || 0,
+    foto_url,
   };
   const { error } = await sb.from('materiais').insert(payload);
   if(error){ msg.textContent = error.message; return; }
@@ -1277,21 +1354,35 @@ async function salvarMaterial(){
 }
 async function editarMaterial(id){
   const { data: m } = await sb.from('materiais').select('*').eq('id', id).single();
+  const opcoesComFoto = await carregarOpcoesComFoto();
   showModal(`
     <h2>${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     <label>Estoque atual</label><input id="em-estoque" type="number" step="0.01" value="${m.estoque_atual}">
     <label>Estoque mínimo</label><input id="em-minimo" type="number" step="0.01" value="${m.estoque_minimo}">
-    <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoMaterial('${id}')">Salvar ajuste de estoque</button>
+    ${fotoMaterialPickerHtml(opcoesComFoto, m.foto_url).replace('id="nm-foto"','id="em-foto"').replace('id="nm-foto-opcao"','id="em-foto-opcao"').replace('id="nm-foto-atual"','id="em-foto-atual"')}
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoMaterial('${id}')">Salvar</button>
     <p id="em-msg" class="error"></p>
   `);
 }
 async function salvarEdicaoMaterial(id){
+  let foto_url = document.getElementById('em-foto-atual').value || null;
+  const file = document.getElementById('em-foto').files[0];
+  const msg = document.getElementById('em-msg');
+  if(file){
+    const up = await uploadParaStorage('materiais', file);
+    if(up.error){ msg.textContent = 'Falhou ao enviar a foto: ' + up.error.message; return; }
+    foto_url = up.url;
+  } else {
+    const opcaoFoto = document.getElementById('em-foto-opcao')?.value;
+    if(opcaoFoto) foto_url = opcaoFoto;
+  }
   const patch = {
     estoque_atual: Number(document.getElementById('em-estoque').value) || 0,
     estoque_minimo: Number(document.getElementById('em-minimo').value) || 0,
+    foto_url,
   };
   const { error } = await sb.from('materiais').update(patch).eq('id', id);
-  if(error){ document.getElementById('em-msg').textContent = error.message; return; }
+  if(error){ msg.textContent = error.message; return; }
   closeModal(); loadTab();
 }
 
