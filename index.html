@@ -170,7 +170,7 @@ async function editarFotoFicha(fichaId, nome){
         </div>`).join('') || '<p class="muted">Nenhuma foto ainda.</p>'}
     </div>
     <label>Adicionar foto (câmera ou galeria)</label>
-    <input type="file" id="ff-foto" accept="image/*" capture="environment">
+    <input type="file" id="ff-foto" accept="image/*">
     <button class="btn block gold" style="margin-top:14px;" onclick="salvarFotoFicha('${fichaId}','${nome.replace(/'/g,"\\'")}')">Enviar foto</button>
     <p id="ff-msg" class="error"></p>
   `);
@@ -538,17 +538,6 @@ async function carregarProdutosFiltrados(){
   `;
 }
 
-// listas de sugestão pros campos de descrição (aparecem como autocomplete, mas aceitam texto livre)
-// campos de descrição cujo valor vem de um catálogo pesquisável (tabela opcoes_descricao)
-const CAMPOS_CATALOGO = [
-  { campo: 'orlado_tipo', label: 'Orlado — tipo', placeholder: 'ex: Fita gorgurão' },
-  { campo: 'forro', label: 'Forro', placeholder: 'ex: Nylon preto' },
-  { campo: 'ferragem_tipo', label: 'Ferragens — tipo', placeholder: 'ex: Mosquete 4cm' },
-  { campo: 'ferragem_cor', label: 'Ferragens — cor', placeholder: 'ex: Dourado' },
-  { campo: 'elastico_tamanho', label: 'Elástico — tamanho', placeholder: 'ex: 3cm' },
-  { campo: 'elastico_cor', label: 'Elástico — cor', placeholder: 'ex: Preto' },
-];
-
 async function uploadParaStorage(prefixoPasta, file){
   const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
   const path = `${prefixoPasta}/${Date.now()}.${ext}`;
@@ -557,116 +546,140 @@ async function uploadParaStorage(prefixoPasta, file){
   const { data } = sb.storage.from('fotos').getPublicUrl(path);
   return { url: data.publicUrl };
 }
-// extrai um rótulo curto (ex: "4cm") pra mostrar embaixo da foto, quando o nome tiver medida
-function rotuloCurto(valor){
-  const m = String(valor).match(/\d+\s?cm/i);
-  return m ? m[0].replace(/\s/,'') : valor;
-}
-async function carregarOpcoesDescricao(){
-  const { data } = await sb.from('opcoes_descricao').select('campo,valor,foto_url').order('valor');
+
+// ===== Lista de materiais do produto (reaproveita o cadastro de Materiais/estoque) =====
+const CATEGORIAS_MATERIAL = ['Orlado','Forro','Ferragens','Metais maçônicos','Elástico','Outro'];
+function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-'); }
+window._pmSel = window._pmSel || {};
+
+async function carregarMateriaisCategorias(){
+  const { data } = await sb.from('materiais').select('id,nome,categoria,foto_url,unidade,estoque_atual').order('nome');
   const map = {};
-  (data||[]).forEach(r => { (map[r.campo] = map[r.campo]||[]).push({ valor: r.valor, foto_url: r.foto_url }); });
-  window._prodOpcoes = map;
+  (data||[]).forEach(m => { const cat = m.categoria || 'Outro'; (map[cat]=map[cat]||[]).push(m); });
+  window._prodMateriais = map;
 }
-function chipsHtmlTexto(opcoes, valorAtual, prefix, campo){
-  return (opcoes||[]).map(o => {
-    const valor = o.valor;
-    const ativo = valor===valorAtual ? 'active' : '';
-    const onclick = `selecionarOpcaoDescricao('${prefix}','${campo}','${valor.replace(/'/g,"\\'")}')`;
-    if(o.foto_url){
-      return `
-        <button type="button" class="chip chip-foto ${ativo}" data-nome="${valor.toLowerCase()}" data-valor="${valor.replace(/"/g,'&quot;')}" onclick="${onclick}">
-          <img src="${o.foto_url}" alt="">
-          <span>${rotuloCurto(valor)}</span>
-        </button>`;
-    }
-    return `<button type="button" class="chip ${ativo}" data-nome="${valor.toLowerCase()}" data-valor="${valor.replace(/"/g,'&quot;')}" onclick="${onclick}">${valor}</button>`;
-  }).join('') || '<p class="muted" style="padding:4px 0;">Nenhuma opção ainda — adicione uma.</p>';
-}
-function selecionarOpcaoDescricao(prefix, campo, valor){
-  document.getElementById(`${prefix}-${campo}`).value = valor;
-  document.querySelectorAll(`#${prefix}-chips-${campo} .chip`).forEach(el=>{
-    el.classList.toggle('active', el.dataset.valor === valor);
-  });
-}
-async function adicionarOpcaoDescricao(prefix, campo){
-  const input = document.getElementById(`${prefix}-busca-${campo}`);
-  const valor = input.value.trim();
-  if(!valor) return;
-  const existente = (window._prodOpcoes[campo]||[]).find(o => o.valor.toLowerCase() === valor.toLowerCase());
-  if(existente){ selecionarOpcaoDescricao(prefix, campo, existente.valor); return; }
-  let foto_url = null;
-  const fotoInput = document.getElementById(`${prefix}-foto-${campo}`);
-  const file = fotoInput?.files[0];
-  if(file){
-    const up = await uploadParaStorage(`opcoes/${campo}`, file);
-    if(up.error){ alert('Falhou ao enviar a foto: ' + up.error.message); return; }
-    foto_url = up.url;
+function materialDe(id){
+  for(const cat in (window._prodMateriais||{})){
+    const m = window._prodMateriais[cat].find(x=>x.id===id);
+    if(m) return m;
   }
-  const { error } = await sb.from('opcoes_descricao').upsert({ campo, valor, foto_url }, { onConflict: 'campo,valor' });
+  return null;
+}
+function materialChipsHtml(prefix, materiais, selecionados){
+  return (materiais||[]).map(m => {
+    const ativo = selecionados[m.id] ? 'active' : '';
+    if(m.foto_url){
+      return `<button type="button" class="chip chip-foto ${ativo}" data-nome="${m.nome.toLowerCase()}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">
+        <img src="${m.foto_url}" alt=""><span>${m.nome}</span></button>`;
+    }
+    return `<button type="button" class="chip ${ativo}" data-nome="${m.nome.toLowerCase()}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">${m.nome}</button>`;
+  }).join('') || '<p class="muted" style="padding:4px 0;">Nenhum material cadastrado ainda.</p>';
+}
+function toggleMaterialSelecionado(prefix, materialId){
+  window._pmSel[prefix] = window._pmSel[prefix] || {};
+  if(window._pmSel[prefix][materialId]) delete window._pmSel[prefix][materialId];
+  else window._pmSel[prefix][materialId] = 1;
+  rerenderMateriaisProduto(prefix);
+}
+function selecionadosMateriaisHtml(prefix){
+  const sel = window._pmSel[prefix] || {};
+  const ids = Object.keys(sel);
+  if(!ids.length) return '<p class="muted">Nenhum material selecionado ainda.</p>';
+  return ids.map(id => {
+    const m = materialDe(id);
+    if(!m) return '';
+    const qtd = Number(sel[id]) || 0;
+    const estoque = Number(m.estoque_atual) || 0;
+    const falta = qtd - estoque;
+    const fmt = (v) => m.unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${m.unidade||''}`;
+    return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:4px;">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${m.foto_url?`<img src="${m.foto_url}" class="foto-thumb" style="width:32px;height:32px;">`:''}
+          <span>${m.nome}</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="number" step="0.01" value="${sel[id]}" style="width:70px;" oninput="window._pmSel['${prefix}']['${id}']=Number(this.value)||0; atualizarEstoqueItem('${prefix}','${id}');">
+          <button type="button" class="btn ghost sm" onclick="toggleMaterialSelecionado('${prefix}','${id}')">Remover</button>
+        </div>
+      </div>
+      <div class="muted" id="${prefix}-estoque-${id}" style="font-size:12px;">Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra 1 unidade'}</div>
+    </div>`;
+  }).join('');
+}
+function atualizarEstoqueItem(prefix, materialId){
+  const m = materialDe(materialId);
+  if(!m) return;
+  const el = document.getElementById(`${prefix}-estoque-${materialId}`);
+  if(!el) return;
+  const qtd = Number((window._pmSel[prefix]||{})[materialId]) || 0;
+  const estoque = Number(m.estoque_atual) || 0;
+  const falta = qtd - estoque;
+  const fmt = (v) => m.unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${m.unidade||''}`;
+  el.innerHTML = `Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra 1 unidade'}`;
+}
+function rerenderMateriaisProduto(prefix){
+  CATEGORIAS_MATERIAL.forEach(cat => {
+    const slug = slugCat(cat);
+    const el = document.getElementById(`${prefix}-mat-chips-${slug}`);
+    if(el) el.innerHTML = materialChipsHtml(prefix, (window._prodMateriais||{})[cat]||[], window._pmSel[prefix]||{});
+  });
+  const selDiv = document.getElementById(`${prefix}-mat-selecionados`);
+  if(selDiv) selDiv.innerHTML = selecionadosMateriaisHtml(prefix);
+}
+async function criarMaterialRapido(prefix, categoria){
+  const slug = slugCat(categoria);
+  const input = document.getElementById(`${prefix}-novo-mat-${slug}`);
+  const nome = input.value.trim();
+  if(!nome) return;
+  const { data, error } = await sb.from('materiais').insert({ nome, categoria, unidade: 'peça' }).select().single();
   if(error){ alert(error.message); return; }
-  window._prodOpcoes[campo] = window._prodOpcoes[campo] || [];
-  window._prodOpcoes[campo].push({ valor, foto_url });
-  window._prodOpcoes[campo].sort((a,b)=>a.valor.localeCompare(b.valor,'pt-BR'));
-  document.getElementById(`${prefix}-chips-${campo}`).innerHTML = chipsHtmlTexto(window._prodOpcoes[campo], valor, prefix, campo);
-  selecionarOpcaoDescricao(prefix, campo, valor);
+  window._prodMateriais[categoria] = window._prodMateriais[categoria] || [];
+  window._prodMateriais[categoria].push(data);
+  window._prodMateriais[categoria].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  window._pmSel[prefix] = window._pmSel[prefix] || {};
+  window._pmSel[prefix][data.id] = 1;
   input.value = '';
-  if(fotoInput) fotoInput.value = '';
+  rerenderMateriaisProduto(prefix);
 }
-function campoBuscaHtml(prefix, campo, label, placeholder, valorAtual){
-  const opcoes = (window._prodOpcoes||{})[campo] || [];
+function categoriaMateriaisHtml(prefix, categoria){
+  const slug = slugCat(categoria);
+  const materiais = (window._prodMateriais||{})[categoria] || [];
   return `
-    <label>${label}</label>
-    <div class="row">
-      <input placeholder="Buscar ou digitar novo(a) ${placeholder}..." oninput="filtrarChips(this.id,'${prefix}-chips-${campo}')" id="${prefix}-busca-${campo}">
-      <button type="button" class="btn ghost sm" onclick="adicionarOpcaoDescricao('${prefix}','${campo}')">+ Adicionar</button>
+    <h2 style="font-size:15px;margin-top:18px;">${categoria}</h2>
+    <input placeholder="Buscar ${categoria.toLowerCase()}..." oninput="filtrarChips(this.id,'${prefix}-mat-chips-${slug}')" id="${prefix}-busca-mat-${slug}">
+    <div id="${prefix}-mat-chips-${slug}" class="chips">
+      ${materialChipsHtml(prefix, materiais, window._pmSel[prefix]||{})}
     </div>
-    <div id="${prefix}-chips-${campo}" class="chips">
-      ${chipsHtmlTexto(opcoes, valorAtual, prefix, campo)}
+    <div class="row" style="margin-top:6px;">
+      <input id="${prefix}-novo-mat-${slug}" placeholder="Nome do novo material">
+      <button type="button" class="btn ghost sm" onclick="criarMaterialRapido('${prefix}','${categoria}')">+ Adicionar</button>
     </div>
-    <label class="muted" style="font-size:12px;margin-top:2px;">Foto (opcional, só pra quando for cadastrar nova opção)</label>
-    <input type="file" id="${prefix}-foto-${campo}" accept="image/*" capture="environment">
-    <input type="hidden" id="${prefix}-${campo}" value="${(valorAtual||'').replace(/"/g,'&quot;')}">
   `;
 }
-function camposDescricaoHtml(prefix, f){
-  f = f || {};
-  const v = (x) => x==null ? '' : String(x).replace(/"/g,'&quot;');
+function listaMateriaisHtml(prefix, outrosAviamentos){
   return `
-    <h2 style="font-size:15px;margin-top:18px;">Descrição do produto</h2>
-    ${campoBuscaHtml(prefix, 'orlado_tipo', 'Orlado — tipo', 'tipo de orlado', f.orlado_tipo)}
-    <label>Orlado — cor</label>
-    <input id="${prefix}-orlado_cor" value="${v(f.orlado_cor)}" placeholder="Ex: branca">
-    <label>Orlado — numeração</label>
-    <input id="${prefix}-orlado_numero" value="${v(f.orlado_numero)}" placeholder="Ex: 92">
-
-    ${campoBuscaHtml(prefix, 'forro', 'Forro', 'tipo de forro', f.forro)}
-    ${campoBuscaHtml(prefix, 'ferragem_tipo', 'Ferragens — tipo', 'tipo de ferragem', f.ferragem_tipo)}
-    ${campoBuscaHtml(prefix, 'ferragem_cor', 'Ferragens — cor', 'cor de ferragem', f.ferragem_cor)}
-    ${campoBuscaHtml(prefix, 'elastico_tamanho', 'Elástico — tamanho', 'tamanho de elástico', f.elastico_tamanho)}
-    ${campoBuscaHtml(prefix, 'elastico_cor', 'Elástico — cor', 'cor de elástico', f.elastico_cor)}
-
-    <label>Outros aviamentos</label>
-    <textarea id="${prefix}-outros_aviamentos" rows="2" placeholder="Qualquer outro detalhe...">${v(f.outros_aviamentos)}</textarea>
+    <h2 style="font-size:15px;margin-top:22px;">Lista de materiais</h2>
+    <p class="muted">Pode escolher mais de uma opção em cada categoria. Fornecedor, cor, numeração e foto de cada material se editam na aba Materiais.</p>
+    ${CATEGORIAS_MATERIAL.map(cat=>categoriaMateriaisHtml(prefix, cat)).join('')}
+    <h2 style="font-size:15px;margin-top:18px;">Selecionados</h2>
+    <div id="${prefix}-mat-selecionados">${selecionadosMateriaisHtml(prefix)}</div>
+    <label style="margin-top:12px;">Outras observações</label>
+    <textarea id="${prefix}-outros_aviamentos" rows="2" placeholder="Qualquer outro detalhe...">${(outrosAviamentos||'').replace(/</g,'&lt;')}</textarea>
   `;
 }
-function lerCamposDescricao(prefix){
-  const g = (id) => document.getElementById(id)?.value.trim() || null;
-  return {
-    orlado_tipo: g(`${prefix}-orlado_tipo`),
-    orlado_cor: g(`${prefix}-orlado_cor`),
-    orlado_numero: g(`${prefix}-orlado_numero`),
-    forro: g(`${prefix}-forro`),
-    ferragem_tipo: g(`${prefix}-ferragem_tipo`),
-    ferragem_cor: g(`${prefix}-ferragem_cor`),
-    elastico_tamanho: g(`${prefix}-elastico_tamanho`),
-    elastico_cor: g(`${prefix}-elastico_cor`),
-    outros_aviamentos: g(`${prefix}-outros_aviamentos`),
-  };
+async function salvarListaMateriais(prefix, fichaId){
+  await sb.from('ficha_materiais').delete().eq('ficha_id', fichaId);
+  const sel = window._pmSel[prefix] || {};
+  const linhas = Object.keys(sel).map((materialId, i) => ({
+    ficha_id: fichaId, material_id: materialId, quantidade_por_unidade: sel[materialId] || 1, ordem: i,
+  }));
+  if(linhas.length) await sb.from('ficha_materiais').insert(linhas);
 }
 
 async function novoProdutoCompleto(){
-  await carregarOpcoesDescricao();
+  await carregarMateriaisCategorias();
+  window._pmSel['npf'] = {};
   const potNome = (window._prodPotencias||[]).find(p=>p.id===state.produtos.potenciaId)?.nome || '';
   const tipoNome = (window._prodTipos||[]).find(t=>t.id===state.produtos.tipoId)?.nome || '';
   const ritoNome = (window._prodRitos||[]).find(r=>r.id===state.produtos.ritoId)?.nome || '';
@@ -678,9 +691,9 @@ async function novoProdutoCompleto(){
     <input id="npf-nome" value="${sugestao.replace(/"/g,'&quot;')}">
     <label>Unidade de produção</label>
     <input id="npf-unidade" placeholder="peça, par, avental...">
-    <label>Foto do modelo (opcional)</label>
-    <input type="file" id="npf-foto" accept="image/*" capture="environment">
-    ${camposDescricaoHtml('npf', {})}
+    <label>Foto do produto (opcional)</label>
+    <input type="file" id="npf-foto" accept="image/*">
+    ${listaMateriaisHtml('npf', '')}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarProdutoCompleto()">Salvar</button>
     <p id="npf-msg" class="error"></p>
   `);
@@ -696,10 +709,11 @@ async function salvarProdutoCompleto(){
     tipo_peca_id: state.produtos.tipoId,
     rito_id: state.produtos.ritoId || null,
     cargo_id: state.produtos.cargoId || null,
-    ...lerCamposDescricao('npf'),
+    outros_aviamentos: document.getElementById('npf-outros_aviamentos').value.trim() || null,
   };
   const { data, error } = await sb.from('fichas_tecnicas').insert(payload).select().single();
   if(error){ msg.textContent = error.message; return; }
+  await salvarListaMateriais('npf', data.id);
   const file = document.getElementById('npf-foto').files[0];
   if(file){
     const { error: fotoErr } = await uploadFotoFicha(data.id, file);
@@ -709,10 +723,13 @@ async function salvarProdutoCompleto(){
   carregarProdutosFiltrados();
 }
 
-// editor completo de um produto já cadastrado (nome, descrição e fotos)
+// editor completo de um produto já cadastrado (nome, materiais e fotos)
 async function abrirProduto(fichaId){
-  await carregarOpcoesDescricao();
+  await carregarMateriaisCategorias();
   const { data: f } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(*)').eq('id', fichaId).single();
+  const { data: fm } = await sb.from('ficha_materiais').select('material_id,quantidade_por_unidade').eq('ficha_id', fichaId);
+  window._pmSel['epf'] = {};
+  (fm||[]).forEach(r => { window._pmSel['epf'][r.material_id] = r.quantidade_por_unidade; });
   const fotos = (f.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
   showModal(`
     <h2>${f.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
@@ -720,18 +737,20 @@ async function abrirProduto(fichaId){
     <input id="epf-nome" value="${(f.nome||'').replace(/"/g,'&quot;')}">
     <label>Unidade de produção</label>
     <input id="epf-unidade" value="${(f.unidade_producao||'').replace(/"/g,'&quot;')}">
-    ${camposDescricaoHtml('epf', f)}
 
-    <h2 style="font-size:15px;margin-top:18px;">Fotos</h2>
-    <div id="epf-fotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-      ${fotos.map(ft=>`
-        <div style="position:relative;">
-          <img src="${ft.url}" class="foto-thumb" style="width:70px;height:70px;">
-          <button class="btn danger sm" style="position:absolute;top:-6px;right:-6px;padding:1px 7px;border-radius:50%;" onclick="event.stopPropagation(); removerFotoFichaInline('${ft.id}','${fichaId}')">&times;</button>
-        </div>`).join('') || '<p class="muted">Nenhuma foto ainda.</p>'}
+    <button type="button" class="btn ghost sm" style="margin-top:10px;" onclick="document.getElementById('epf-fotos-wrap').style.display='block'; this.style.display='none';">Ver / alterar foto</button>
+    <div id="epf-fotos-wrap" style="display:none;margin-top:8px;">
+      <div id="epf-fotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        ${fotos.map(ft=>`
+          <div style="position:relative;">
+            <img src="${ft.url}" class="foto-thumb" style="width:70px;height:70px;">
+            <button class="btn danger sm" style="position:absolute;top:-6px;right:-6px;padding:1px 7px;border-radius:50%;" onclick="event.stopPropagation(); removerFotoFichaInline('${ft.id}','${fichaId}')">&times;</button>
+          </div>`).join('') || '<p class="muted">Nenhuma foto ainda.</p>'}
+      </div>
+      <input type="file" id="epf-foto" accept="image/*">
     </div>
-    <input type="file" id="epf-foto" accept="image/*" capture="environment">
 
+    ${listaMateriaisHtml('epf', f.outros_aviamentos)}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoProduto('${fichaId}')">Salvar alterações</button>
     <p id="epf-msg" class="error"></p>
   `);
@@ -747,11 +766,13 @@ async function salvarEdicaoProduto(fichaId){
   const patch = {
     nome,
     unidade_producao: document.getElementById('epf-unidade').value.trim() || 'peça',
-    ...lerCamposDescricao('epf'),
+    outros_aviamentos: document.getElementById('epf-outros_aviamentos').value.trim() || null,
   };
   const { error } = await sb.from('fichas_tecnicas').update(patch).eq('id', fichaId);
   if(error){ msg.textContent = error.message; return; }
-  const file = document.getElementById('epf-foto').files[0];
+  await salvarListaMateriais('epf', fichaId);
+  const fotoInput = document.getElementById('epf-foto');
+  const file = fotoInput?.files[0];
   if(file){
     const { error: fotoErr } = await uploadFotoFicha(fichaId, file);
     if(fotoErr){ msg.textContent = 'Salvo, mas a foto falhou: ' + fotoErr.message; return; }
@@ -920,7 +941,7 @@ async function npNovaFicha(){
     <label>Unidade de produção</label>
     <input id="nf-unidade" placeholder="peça, par, avental...">
     <label>Foto do modelo (opcional)</label>
-    <input type="file" id="nf-foto" accept="image/*" capture="environment">
+    <input type="file" id="nf-foto" accept="image/*">
     <button class="btn block gold" style="margin-top:16px;" onclick="npSalvarFicha()">Salvar</button>
     <p id="nf-msg" class="error"></p>
   `);
@@ -1087,7 +1108,7 @@ async function novaFicha(pedidoId){
     <label>Unidade de produção</label>
     <input id="nf-unidade" placeholder="peça, par, avental...">
     <label>Foto do modelo (opcional)</label>
-    <input type="file" id="nf-foto" accept="image/*" capture="environment">
+    <input type="file" id="nf-foto" accept="image/*">
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarFicha('${pedidoId}')">Salvar</button>
     <p id="nf-msg" class="error"></p>
   `);
@@ -1270,6 +1291,7 @@ async function renderMateriais(){
         </div>
         ${baixo ? '<span class="pill urgente">Estoque baixo</span>' : ''}
       </div>
+      <div class="muted">${[m.categoria, m.marca, (m.cor&&m.numero)?`${m.cor} ${m.numero}`:(m.cor||m.numero), m.tamanho?`tam. ${m.tamanho}`:null].filter(Boolean).join(' · ') || 'Sem categoria'}</div>
       <div class="muted">${m.fornecedores?.nome || 'Sem fornecedor'} ${m.referencia?('· ref '+m.referencia):''}</div>
       <div class="muted">Estoque: ${m.estoque_atual} ${m.unidade}</div>
     </div>`;
@@ -1286,7 +1308,7 @@ function fotoMaterialPickerHtml(opcoesComFoto, fotoAtual){
     <div id="nm-foto-preview" style="margin-bottom:6px;">
       ${fotoAtual ? `<img src="${fotoAtual}" class="foto-thumb" style="width:70px;height:70px;">` : '<p class="muted">Sem foto ainda.</p>'}
     </div>
-    <input type="file" id="nm-foto" accept="image/*" capture="environment">
+    <input type="file" id="nm-foto" accept="image/*">
     ${opcoesComFoto.length ? `
     <label style="margin-top:8px;">Ou reaproveitar foto já cadastrada (ferragens, forro, etc.)</label>
     <select id="nm-foto-opcao">
@@ -1301,7 +1323,16 @@ async function novoMaterial(){
   const opcoesComFoto = await carregarOpcoesComFoto();
   showModal(`
     <h2>Novo material <button class="close" onclick="closeModal()">&times;</button></h2>
-    <label>Nome</label><input id="nm-nome" placeholder="Ex: Fita gorgurão 5cm cor 92">
+    <label>Tipo</label><input id="nm-nome" placeholder="Ex: Fita de gorgurão">
+    <label>Categoria</label>
+    <select id="nm-categoria">
+      <option value="">—</option>
+      ${CATEGORIAS_MATERIAL.map(c=>`<option value="${c}">${c}</option>`).join('')}
+    </select>
+    <label>Marca</label><input id="nm-marca" placeholder="Ex: Marca X (importa pro pedido ao fornecedor)">
+    <label>Cor</label><input id="nm-cor" placeholder="Ex: Vermelho">
+    <label>Numeração da cor</label><input id="nm-numero" placeholder="Ex: 126">
+    <label>Tamanho</label><input id="nm-tamanho" placeholder="Ex: 5">
     <label>Unidade</label>
     <select id="nm-unidade"><option value="cm">cm</option><option value="m">m</option><option value="peça">peça</option></select>
     <label>Fornecedor</label>
@@ -1341,6 +1372,11 @@ async function salvarMaterial(){
   }
   const payload = {
     nome,
+    categoria: document.getElementById('nm-categoria').value || null,
+    marca: document.getElementById('nm-marca').value.trim() || null,
+    cor: document.getElementById('nm-cor').value.trim() || null,
+    numero: document.getElementById('nm-numero').value.trim() || null,
+    tamanho: document.getElementById('nm-tamanho').value.trim() || null,
     unidade: document.getElementById('nm-unidade').value,
     fornecedor_id: fornecedor_id || null,
     referencia: document.getElementById('nm-ref').value,
@@ -1357,6 +1393,16 @@ async function editarMaterial(id){
   const opcoesComFoto = await carregarOpcoesComFoto();
   showModal(`
     <h2>${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Tipo</label><input id="em-nome" value="${(m.nome||'').replace(/"/g,'&quot;')}">
+    <label>Categoria</label>
+    <select id="em-categoria">
+      <option value="">—</option>
+      ${CATEGORIAS_MATERIAL.map(c=>`<option value="${c}" ${m.categoria===c?'selected':''}>${c}</option>`).join('')}
+    </select>
+    <label>Marca</label><input id="em-marca" value="${(m.marca||'').replace(/"/g,'&quot;')}">
+    <label>Cor</label><input id="em-cor" value="${(m.cor||'').replace(/"/g,'&quot;')}">
+    <label>Numeração da cor</label><input id="em-numero" value="${(m.numero||'').replace(/"/g,'&quot;')}">
+    <label>Tamanho</label><input id="em-tamanho" value="${(m.tamanho||'').replace(/"/g,'&quot;')}">
     <label>Estoque atual</label><input id="em-estoque" type="number" step="0.01" value="${m.estoque_atual}">
     <label>Estoque mínimo</label><input id="em-minimo" type="number" step="0.01" value="${m.estoque_minimo}">
     ${fotoMaterialPickerHtml(opcoesComFoto, m.foto_url).replace('id="nm-foto"','id="em-foto"').replace('id="nm-foto-opcao"','id="em-foto-opcao"').replace('id="nm-foto-atual"','id="em-foto-atual"')}
@@ -1376,7 +1422,15 @@ async function salvarEdicaoMaterial(id){
     const opcaoFoto = document.getElementById('em-foto-opcao')?.value;
     if(opcaoFoto) foto_url = opcaoFoto;
   }
+  const nome = document.getElementById('em-nome').value.trim();
+  if(!nome){ msg.textContent='Informe o tipo.'; return; }
   const patch = {
+    nome,
+    categoria: document.getElementById('em-categoria').value || null,
+    marca: document.getElementById('em-marca').value.trim() || null,
+    cor: document.getElementById('em-cor').value.trim() || null,
+    numero: document.getElementById('em-numero').value.trim() || null,
+    tamanho: document.getElementById('em-tamanho').value.trim() || null,
     estoque_atual: Number(document.getElementById('em-estoque').value) || 0,
     estoque_minimo: Number(document.getElementById('em-minimo').value) || 0,
     foto_url,
@@ -1415,7 +1469,7 @@ function calcSelecionarFicha(id){
   if(f) selecionarFichaCalc(f.id, f.nome);
 }
 async function selecionarFichaCalc(fichaId, nome){
-  const { data: materiais } = await sb.from('ficha_materiais').select('*, materiais(nome,unidade)').eq('ficha_id', fichaId).order('ordem');
+  const { data: materiais } = await sb.from('ficha_materiais').select('*, materiais(nome,unidade,estoque_atual)').eq('ficha_id', fichaId).order('ordem');
   const div = document.getElementById('calc-resultado');
   div.innerHTML = `
     <h2 style="font-size:15px;margin-top:18px;">${nome}</h2>
@@ -1427,6 +1481,12 @@ async function selecionarFichaCalc(fichaId, nome){
   div.dataset.materiais = JSON.stringify(materiais||[]);
   atualizarCalcTotais(fichaId);
 }
+// cruza a quantidade necessária com o estoque atual do material e calcula o que vai faltar
+function cruzarEstoque(m, total){
+  const estoque = Number(m.materiais?.estoque_atual) || 0;
+  const falta = total - estoque;
+  return { estoque, falta: falta > 0 ? falta : 0 };
+}
 function atualizarCalcTotais(){
   const div = document.getElementById('calc-resultado');
   const materiais = JSON.parse(div.dataset.materiais || '[]');
@@ -1434,8 +1494,15 @@ function atualizarCalcTotais(){
   const totaisDiv = document.getElementById('calc-totais');
   totaisDiv.innerHTML = materiais.map(m => {
     const total = Number(m.quantidade_por_unidade) * qtd;
-    const label = m.materiais?.unidade === 'cm' ? formatMedida(total, 'cm') : `${total} ${m.materiais?.unidade}`;
-    return `<div class="item"><span>${m.materiais?.nome}</span><span>${label}</span></div>`;
+    const unidade = m.materiais?.unidade;
+    const fmt = (v) => unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${unidade||''}`;
+    const { estoque, falta } = cruzarEstoque(m, total);
+    return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:2px;">
+      <div style="display:flex;justify-content:space-between;width:100%;">
+        <span>${m.materiais?.nome}</span><span>${fmt(total)}</span>
+      </div>
+      <div class="muted" style="font-size:12px;">Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok'}</div>
+    </div>`;
   }).join('') || '<p class="muted">Sem materiais cadastrados pra essa ficha.</p>';
 }
 function copiarCalculo(nomeFicha){
@@ -1445,8 +1512,10 @@ function copiarCalculo(nomeFicha){
   let texto = `*${nomeFicha}* — ${qtd} un.\n\n`;
   materiais.forEach(m => {
     const total = Number(m.quantidade_por_unidade) * Number(qtd);
-    const label = m.materiais?.unidade === 'cm' ? formatMedida(total, 'cm') : `${total} ${m.materiais?.unidade}`;
-    texto += `• ${m.materiais?.nome}: ${label}\n`;
+    const unidade = m.materiais?.unidade;
+    const fmt = (v) => unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${unidade||''}`;
+    const { falta } = cruzarEstoque(m, total);
+    texto += `• ${m.materiais?.nome}: ${fmt(total)}${falta>0?` (falta ${fmt(falta)})`:''}\n`;
   });
   navigator.clipboard.writeText(texto).then(()=>alert('Lista copiada!')).catch(()=>alert(texto));
 }
