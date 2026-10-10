@@ -577,8 +577,8 @@ function materialChipsHtml(prefix, materiais, selecionados){
 }
 function toggleMaterialSelecionado(prefix, materialId){
   window._pmSel[prefix] = window._pmSel[prefix] || {};
-  if(window._pmSel[prefix][materialId]) delete window._pmSel[prefix][materialId];
-  else window._pmSel[prefix][materialId] = 1;
+  if(materialId in window._pmSel[prefix]) delete window._pmSel[prefix][materialId];
+  else window._pmSel[prefix][materialId] = null; // obriga a informar a medida usada nesse paramento
   rerenderMateriaisProduto(prefix);
 }
 function selecionadosMateriaisHtml(prefix){
@@ -588,22 +588,23 @@ function selecionadosMateriaisHtml(prefix){
   return ids.map(id => {
     const m = materialDe(id);
     if(!m) return '';
-    const qtd = Number(sel[id]) || 0;
+    const qtdBruta = sel[id];
+    const qtd = Number(qtdBruta) || 0;
     const estoque = Number(m.estoque_atual) || 0;
     const falta = qtd - estoque;
     const fmt = (v) => m.unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${m.unidade||''}`;
+    const detalhe = [m.marca, (m.cor&&m.numero)?`${m.cor} ${m.numero}`:(m.cor||m.numero), m.tamanho?`tam. ${m.tamanho}`:null].filter(Boolean).join(' · ');
     return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:4px;">
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
         <div style="display:flex;gap:8px;align-items:center;">
           ${m.foto_url?`<img src="${m.foto_url}" class="foto-thumb" style="width:32px;height:32px;">`:''}
-          <span>${m.nome}</span>
+          <div><span>${m.nome}</span>${detalhe?`<div class="muted" style="font-size:11px;">${detalhe}</div>`:''}</div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <input type="number" step="0.01" value="${sel[id]}" style="width:70px;" oninput="window._pmSel['${prefix}']['${id}']=Number(this.value)||0; atualizarEstoqueItem('${prefix}','${id}');">
-          <button type="button" class="btn ghost sm" onclick="toggleMaterialSelecionado('${prefix}','${id}')">Remover</button>
-        </div>
+        <button type="button" class="btn ghost sm" onclick="toggleMaterialSelecionado('${prefix}','${id}')">Remover</button>
       </div>
-      <div class="muted" id="${prefix}-estoque-${id}" style="font-size:12px;">Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra 1 unidade'}</div>
+      <label style="font-size:12px;margin:2px 0 0;">Medida usada neste paramento (${m.unidade||'un.'})</label>
+      <input type="number" step="0.01" placeholder="Ex: ${m.unidade==='cm'?'90':'1'}" value="${qtdBruta==null?'':qtdBruta}" style="width:110px;" oninput="window._pmSel['${prefix}']['${id}']=this.value===''?null:(Number(this.value)||0); atualizarEstoqueItem('${prefix}','${id}');">
+      <div class="muted" id="${prefix}-estoque-${id}" style="font-size:12px;">${qtdBruta==null ? 'Informe a medida pra ver o que falta no estoque.' : `Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`}</div>
     </div>`;
   }).join('');
 }
@@ -612,11 +613,13 @@ function atualizarEstoqueItem(prefix, materialId){
   if(!m) return;
   const el = document.getElementById(`${prefix}-estoque-${materialId}`);
   if(!el) return;
-  const qtd = Number((window._pmSel[prefix]||{})[materialId]) || 0;
+  const qtdBruta = (window._pmSel[prefix]||{})[materialId];
+  if(qtdBruta == null){ el.textContent = 'Informe a medida pra ver o que falta no estoque.'; return; }
+  const qtd = Number(qtdBruta) || 0;
   const estoque = Number(m.estoque_atual) || 0;
   const falta = qtd - estoque;
   const fmt = (v) => m.unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${m.unidade||''}`;
-  el.innerHTML = `Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra 1 unidade'}`;
+  el.innerHTML = `Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`;
 }
 function rerenderMateriaisProduto(prefix){
   CATEGORIAS_MATERIAL.forEach(cat => {
@@ -668,11 +671,22 @@ function listaMateriaisHtml(prefix, outrosAviamentos){
     <textarea id="${prefix}-outros_aviamentos" rows="2" placeholder="Qualquer outro detalhe...">${(outrosAviamentos||'').replace(/</g,'&lt;')}</textarea>
   `;
 }
+// retorna o nome do primeiro material selecionado sem medida informada, ou null se tudo ok
+function materiaisSemMedida(prefix){
+  const sel = window._pmSel[prefix] || {};
+  for(const materialId in sel){
+    if(sel[materialId] == null){
+      const m = materialDe(materialId);
+      return m ? m.nome : 'um material';
+    }
+  }
+  return null;
+}
 async function salvarListaMateriais(prefix, fichaId){
   await sb.from('ficha_materiais').delete().eq('ficha_id', fichaId);
   const sel = window._pmSel[prefix] || {};
   const linhas = Object.keys(sel).map((materialId, i) => ({
-    ficha_id: fichaId, material_id: materialId, quantidade_por_unidade: sel[materialId] || 1, ordem: i,
+    ficha_id: fichaId, material_id: materialId, quantidade_por_unidade: sel[materialId], ordem: i,
   }));
   if(linhas.length) await sb.from('ficha_materiais').insert(linhas);
 }
@@ -703,6 +717,8 @@ async function salvarProdutoCompleto(){
   const unidade_producao = document.getElementById('npf-unidade').value.trim() || 'peça';
   const msg = document.getElementById('npf-msg');
   if(!nome){ msg.textContent = 'Informe o nome.'; return; }
+  const semMedida = materiaisSemMedida('npf');
+  if(semMedida){ msg.textContent = `Informe a medida usada de "${semMedida}" nesse paramento.`; return; }
   const payload = {
     nome, unidade_producao,
     potencia_id: state.produtos.potenciaId,
@@ -763,6 +779,8 @@ async function salvarEdicaoProduto(fichaId){
   const msg = document.getElementById('epf-msg');
   const nome = document.getElementById('epf-nome').value.trim();
   if(!nome){ msg.textContent = 'Informe o nome.'; return; }
+  const semMedida = materiaisSemMedida('epf');
+  if(semMedida){ msg.textContent = `Informe a medida usada de "${semMedida}" nesse paramento.`; return; }
   const patch = {
     nome,
     unidade_producao: document.getElementById('epf-unidade').value.trim() || 'peça',
