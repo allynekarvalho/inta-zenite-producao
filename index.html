@@ -754,8 +754,8 @@ async function abrirProduto(fichaId){
     <label>Unidade de produção</label>
     <input id="epf-unidade" value="${(f.unidade_producao||'').replace(/"/g,'&quot;')}">
 
-    <button type="button" class="btn ghost sm" style="margin-top:10px;" onclick="document.getElementById('epf-fotos-wrap').style.display='block'; this.style.display='none';">Ver / alterar foto</button>
-    <div id="epf-fotos-wrap" style="display:none;margin-top:8px;">
+    <label>Fotos do produto</label>
+    <div id="epf-fotos-wrap" style="margin-top:4px;">
       <div id="epf-fotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         ${fotos.map(ft=>`
           <div style="position:relative;">
@@ -763,6 +763,7 @@ async function abrirProduto(fichaId){
             <button class="btn danger sm" style="position:absolute;top:-6px;right:-6px;padding:1px 7px;border-radius:50%;" onclick="event.stopPropagation(); removerFotoFichaInline('${ft.id}','${fichaId}')">&times;</button>
           </div>`).join('') || '<p class="muted">Nenhuma foto ainda.</p>'}
       </div>
+      <label style="margin-top:0;">Adicionar foto</label>
       <input type="file" id="epf-foto" accept="image/*">
     </div>
 
