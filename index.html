@@ -125,6 +125,7 @@ let state = {
   hojeData: new Date().toISOString().slice(0,10),
   pessoaTipo: 'costureiras',
   materiaisView: 'lista',
+  estoqueCat: 'Todas',
   produtos: { potenciaId: null, tipoId: null, ritoId: null, cargoId: null },
 };
 
@@ -271,9 +272,8 @@ function renderApp(){
       ${navBtn('hoje','Hoje')}
       ${navBtn('pedidos','Pedidos')}
       ${navBtn('produtos','Produtos')}
+      ${navBtn('materiais','Estoque')}
       ${navBtn('costureiras','Equipe')}
-      ${navBtn('materiais','Materiais')}
-      ${navBtn('relatorio','Relatório')}
     </div>
   `;
   loadTab();
@@ -641,7 +641,7 @@ async function criarMaterialRapido(prefix, categoria){
   window._prodMateriais[categoria].push(data);
   window._prodMateriais[categoria].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   window._pmSel[prefix] = window._pmSel[prefix] || {};
-  window._pmSel[prefix][data.id] = 1;
+  window._pmSel[prefix][data.id] = null;
   input.value = '';
   rerenderMateriaisProduto(prefix);
 }
@@ -1058,7 +1058,26 @@ async function abrirPedido(id){
       `).join('') || '<p class="muted">Nenhuma peça ainda.</p>'}
     </div>
     <button class="btn block" style="margin-top:14px;" onclick="adicionarPeca('${id}')">+ Adicionar peça</button>
+    <details style="margin-top:16px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🧵 Materiais deste pedido</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
   `);
+  materiaisDoPedido(pecas||[]);
+}
+async function materiaisDoPedido(pecas){
+  const div = document.getElementById('pedido-materiais'); if(!div) return;
+  const fichaIds = [...new Set(pecas.map(p=>p.ficha_id).filter(Boolean))];
+  if(!fichaIds.length){ div.textContent = 'Nenhuma peça ainda.'; return; }
+  const { data: fm } = await sb.from('ficha_materiais').select('ficha_id, quantidade_por_unidade, materiais(id,nome,unidade,estoque_atual,cor,numero,marca,tamanho)').in('ficha_id', fichaIds);
+  const tot = {};
+  pecas.forEach(p => (fm||[]).filter(r=>r.ficha_id===p.ficha_id && r.materiais).forEach(r => {
+    const k = r.materiais.id; tot[k] = tot[k] || { m: r.materiais, q: 0 };
+    tot[k].q += (Number(r.quantidade_por_unidade)||0) * (Number(p.quantidade)||0);
+  }));
+  const linhas = Object.values(tot);
+  if(!linhas.length){ div.textContent = 'Os produtos deste pedido ainda não têm lista de materiais.'; return; }
+  div.innerHTML = linhas.map(x => {
+    const est = Number(x.m.estoque_atual)||0;
+    return `<div class="item"><span style="color:var(--ink);">${x.m.nome}${detalheMaterial(x.m)?`<div class="muted" style="font-size:11px;">${detalheMaterial(x.m)}</div>`:''}</span><span style="text-align:right;white-space:nowrap;"><b style="color:var(--ink);">${fmtQtd(x.q, x.m.unidade)}</b><div style="font-size:11px;color:${est<0?'var(--danger)':'var(--muted)'};">estoque: ${fmtQtd(est, x.m.unidade)}</div></span></div>`;
+  }).join('') + '<p class="muted" style="font-size:11px;margin-top:6px;">Esse material já sai do estoque quando a peça é lançada no pedido.</p>';
 }
 
 async function adicionarPeca(pedidoId){
@@ -1193,11 +1212,13 @@ async function excluirPeca(id){
 async function renderEquipe(){
   const c = document.getElementById('content');
   const tabela = state.pessoaTipo; // costureiras | faccionistas
+  if(tabela==='fechamento'){ return renderRelatorio(); }
   const { data: pessoas, error } = await sb.from(tabela).select('*').order('nome');
   let html = `
     <div class="segmented">
       <button class="${tabela==='costureiras'?'active':''}" onclick="state.pessoaTipo='costureiras';loadTab();">Costureiras</button>
       <button class="${tabela==='faccionistas'?'active':''}" onclick="state.pessoaTipo='faccionistas';loadTab();">Faccionistas</button>
+      <button class="${tabela==='fechamento'?'active':''}" onclick="state.pessoaTipo='fechamento';loadTab();">Fechamento</button>
     </div>
     <button class="btn block" onclick="novaPessoa()">+ Nova ${tabela==='costureiras'?'costureira':'faccionista'}</button>
     <div style="height:14px;"></div>`;
@@ -1286,175 +1307,256 @@ async function salvarValor(id, valoresTabela, fk){
   closeModal(); abrirPessoa(id);
 }
 
-// ================= MATERIAIS =================
+// ================= ESTOQUE (materiais) =================
+function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function fmtQtd(v, unidade){
+  const n = Number(v)||0;
+  if(unidade === 'cm') return formatMedida(n, 'cm');
+  return `${n.toLocaleString('pt-BR',{maximumFractionDigits:2})} ${unidade||''}`.trim();
+}
+function detalheMaterial(m){
+  return [m.marca, (m.cor&&m.numero)?`${m.cor} ${m.numero}`:(m.cor||m.numero), m.tamanho?`tam. ${m.tamanho}`:null].filter(Boolean).join(' · ');
+}
+function situacaoMaterial(m){
+  const est = Number(m.estoque_atual)||0, min = Number(m.estoque_minimo)||0;
+  if(est < 0) return 'falta';
+  if(min > 0 && est <= min) return 'baixo';
+  return 'ok';
+}
 async function renderMateriais(){
   if(state.materiaisView === 'calculadora'){ renderCalculadora(); return; }
   const c = document.getElementById('content');
   const { data: materiais, error } = await sb.from('materiais').select('*, fornecedores(nome)').order('nome');
+  if(error){ c.innerHTML = `<p class="error">${error.message}</p>`; return; }
+  window._estoqueCache = materiais||[];
+  const comprar = (materiais||[]).filter(m => situacaoMaterial(m) !== 'ok');
+  const filtro = state.estoqueCat || 'Todas';
+  const cats = ['Todas', ...CATEGORIAS_MATERIAL];
   let html = `
     <div class="row">
-      <button class="btn ghost" onclick="state.materiaisView='calculadora'; loadTab();">Calculadora de materiais</button>
       <button class="btn" onclick="novoMaterial()">+ Novo material</button>
-    </div>
-    <div style="height:14px;"></div>`;
-  if(error){ html += `<p class="error">${error.message}</p>`; c.innerHTML = html; return; }
-  html += (materiais||[]).map(m => {
-    const baixo = Number(m.estoque_atual) <= Number(m.estoque_minimo);
-    return `
-    <div class="card" onclick="editarMaterial('${m.id}')" style="cursor:pointer;">
-      <div style="display:flex;gap:10px;justify-content:space-between;">
-        <div style="display:flex;gap:10px;align-items:center;">
-          ${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:40px;height:40px;">` : ''}
-          <strong>${m.nome}</strong>
-        </div>
-        ${baixo ? '<span class="pill urgente">Estoque baixo</span>' : ''}
-      </div>
-      <div class="muted">${[m.categoria, m.marca, (m.cor&&m.numero)?`${m.cor} ${m.numero}`:(m.cor||m.numero), m.tamanho?`tam. ${m.tamanho}`:null].filter(Boolean).join(' · ') || 'Sem categoria'}</div>
-      <div class="muted">${m.fornecedores?.nome || 'Sem fornecedor'} ${m.referencia?('· ref '+m.referencia):''}</div>
-      <div class="muted">Estoque: ${m.estoque_atual} ${m.unidade}</div>
+      <button class="btn ghost" onclick="state.materiaisView='calculadora'; loadTab();">🧮 Calcular</button>
     </div>`;
-  }).join('') || '<div class="card center muted">Nenhum material cadastrado.</div>';
+  if(comprar.length){
+    html += `
+    <div class="card" style="margin-top:14px;border-color:var(--danger);">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <strong style="color:var(--danger);">⚠️ Precisa comprar (${comprar.length})</strong>
+        <button class="btn ghost sm" onclick="copiarListaCompras()">Copiar lista</button>
+      </div>
+      ${comprar.map(m => {
+        const est = Number(m.estoque_atual)||0, min = Number(m.estoque_minimo)||0;
+        const precisa = Math.max(min - est, est < 0 ? -est : 0);
+        return `<div class="item" onclick="editarMaterial('${m.id}')" style="cursor:pointer;">
+          <span>${m.nome}${detalheMaterial(m)?`<div class="muted" style="font-size:11px;">${detalheMaterial(m)}</div>`:''}</span>
+          <span style="text-align:right;white-space:nowrap;"><b>${fmtQtd(precisa, m.unidade)}</b><div class="muted" style="font-size:11px;">tem ${fmtQtd(est, m.unidade)}</div></span>
+        </div>`; }).join('')}
+    </div>`;
+  }
+  html += `
+    <input id="est-busca" placeholder="🔍 Buscar material..." style="margin-top:14px;" oninput="filtrarEstoque()">
+    <div class="chips">${cats.map(ct=>`<button type="button" class="chip ${filtro===ct?'active':''}" onclick="state.estoqueCat='${ct}'; loadTab();">${ct}</button>`).join('')}</div>
+    <div id="est-lista"></div>`;
   c.innerHTML = html;
+  filtrarEstoque();
+}
+function filtrarEstoque(){
+  const div = document.getElementById('est-lista'); if(!div) return;
+  const q = (document.getElementById('est-busca')?.value||'').toLowerCase().trim();
+  const filtro = state.estoqueCat || 'Todas';
+  const lista = (window._estoqueCache||[]).filter(m => {
+    const cat = m.categoria || 'Outro';
+    if(filtro !== 'Todas' && cat !== filtro) return false;
+    if(!q) return true;
+    return [m.nome, m.marca, m.cor, m.numero, m.tamanho, m.referencia, m.fornecedores?.nome].filter(Boolean).join(' ').toLowerCase().includes(q);
+  });
+  if(!lista.length){ div.innerHTML = '<div class="card center muted">Nenhum material encontrado.</div>'; return; }
+  const grupos = {};
+  lista.forEach(m => { const cat = m.categoria || 'Outro'; (grupos[cat]=grupos[cat]||[]).push(m); });
+  const ordem = CATEGORIAS_MATERIAL.filter(ct => grupos[ct]);
+  div.innerHTML = ordem.map(ct => `
+    <h2 style="font-size:15px;margin:16px 0 8px;">${ct} <span class="muted" style="font-family:Inter;font-weight:400;">(${grupos[ct].length})</span></h2>
+    ${grupos[ct].map(m => {
+      const sit = situacaoMaterial(m);
+      const cor = sit==='falta' ? 'var(--danger)' : (sit==='baixo' ? '#b7791f' : 'var(--ok)');
+      return `
+      <div class="card" style="padding:12px;">
+        <div style="display:flex;gap:10px;align-items:center;cursor:pointer;" onclick="editarMaterial('${m.id}')">
+          ${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:48px;height:48px;">` : `<div class="foto-thumb" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:var(--muted);">📦</div>`}
+          <div style="flex:1;min-width:0;">
+            <strong>${m.nome}</strong>
+            ${detalheMaterial(m)?`<div class="muted" style="font-size:12px;">${detalheMaterial(m)}</div>`:''}
+            ${m.fornecedores?.nome?`<div class="muted" style="font-size:12px;">${m.fornecedores.nome}${m.referencia?(' · ref '+m.referencia):''}</div>`:''}
+          </div>
+          <div style="text-align:right;white-space:nowrap;">
+            <div style="font-size:17px;font-weight:700;color:${cor};">${fmtQtd(m.estoque_atual, m.unidade)}</div>
+            ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtQtd(m.estoque_minimo, m.unidade)}</div>`:''}
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>
+          <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
+        </div>
+      </div>`; }).join('')}
+  `).join('');
+}
+function copiarListaCompras(){
+  const comprar = (window._estoqueCache||[]).filter(m => situacaoMaterial(m) !== 'ok');
+  const porForn = {};
+  comprar.forEach(m => { const f = m.fornecedores?.nome || 'Sem fornecedor'; (porForn[f]=porForn[f]||[]).push(m); });
+  let txt = '*Lista de compras — Inta Zenite*\n';
+  Object.keys(porForn).forEach(f => {
+    txt += `\n*${f}*\n`;
+    porForn[f].forEach(m => {
+      const est = Number(m.estoque_atual)||0, min = Number(m.estoque_minimo)||0;
+      const precisa = Math.max(min - est, est < 0 ? -est : 0);
+      txt += `• ${m.nome}${detalheMaterial(m)?' ('+detalheMaterial(m)+')':''}${m.referencia?' ref '+m.referencia:''}: ${fmtQtd(precisa, m.unidade)}\n`;
+    });
+  });
+  navigator.clipboard.writeText(txt).then(()=>alert('Lista copiada! É só colar no WhatsApp.')).catch(()=>alert(txt));
+}
+function entradaMaterial(id){
+  const m = (window._estoqueCache||[]).find(x=>x.id===id); if(!m) return;
+  showModal(`
+    <h2>Entrada: ${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <p class="muted">Tem agora: <b>${fmtQtd(m.estoque_atual, m.unidade)}</b></p>
+    <label>Quanto chegou (${m.unidade||'un.'})</label>
+    <input id="ent-qtd" type="number" step="0.01" inputmode="decimal" placeholder="Ex: ${m.unidade==='cm'?'9000 (= 90 m)':'10'}">
+    <button class="btn block gold" style="margin-top:16px;" onclick="salvarEntrada('${id}')">Somar ao estoque</button>
+    <p id="ent-msg" class="error"></p>
+  `);
+  setTimeout(()=>document.getElementById('ent-qtd')?.focus(), 50);
+}
+async function salvarEntrada(id){
+  const qtd = Number(document.getElementById('ent-qtd').value);
+  const msg = document.getElementById('ent-msg');
+  if(!qtd){ msg.textContent = 'Informe a quantidade.'; return; }
+  const { data: m, error: e1 } = await sb.from('materiais').select('estoque_atual').eq('id', id).single();
+  if(e1){ msg.textContent = e1.message; return; }
+  const { error } = await sb.from('materiais').update({ estoque_atual: (Number(m.estoque_atual)||0) + qtd }).eq('id', id);
+  if(error){ msg.textContent = error.message; return; }
+  closeModal(); loadTab();
 }
 async function carregarOpcoesComFoto(){
   const { data } = await sb.from('opcoes_descricao').select('campo,valor,foto_url').not('foto_url', 'is', null).order('valor');
   return data||[];
 }
-function fotoMaterialPickerHtml(opcoesComFoto, fotoAtual){
+function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
+  m = m || {};
+  const un = m.unidade || 'cm';
   return `
-    <label>Foto</label>
-    <div id="nm-foto-preview" style="margin-bottom:6px;">
-      ${fotoAtual ? `<img src="${fotoAtual}" class="foto-thumb" style="width:70px;height:70px;">` : '<p class="muted">Sem foto ainda.</p>'}
+    <label>Nome do material</label><input id="${p}-nome" value="${escAttr(m.nome)}" placeholder="Ex: Fita de gorgurão">
+    <label>Categoria</label>
+    <div class="chips" id="${p}-cat-chips">
+      ${CATEGORIAS_MATERIAL.map(ct=>`<button type="button" class="chip ${m.categoria===ct?'active':''}" onclick="document.getElementById('${p}-categoria').value='${ct}'; document.querySelectorAll('#${p}-cat-chips .chip').forEach(b=>b.classList.toggle('active', b.textContent==='${ct}'));">${ct}</button>`).join('')}
     </div>
-    <input type="file" id="nm-foto" accept="image/*">
+    <input type="hidden" id="${p}-categoria" value="${escAttr(m.categoria)}">
+    <div class="row">
+      <div><label>Cor</label><input id="${p}-cor" value="${escAttr(m.cor)}" placeholder="Ex: Azul royal"></div>
+      <div><label>Nº da cor</label><input id="${p}-numero" value="${escAttr(m.numero)}" placeholder="Ex: 126"></div>
+    </div>
+    <div class="row">
+      <div><label>Marca</label><input id="${p}-marca" value="${escAttr(m.marca)}"></div>
+      <div><label>Tamanho / largura</label><input id="${p}-tamanho" value="${escAttr(m.tamanho)}" placeholder="Ex: 5 cm"></div>
+    </div>
+    <label>Unidade de medida</label>
+    <select id="${p}-unidade">
+      <option value="cm" ${un==='cm'?'selected':''}>cm (fitas, tecidos, elástico)</option>
+      <option value="m" ${un==='m'?'selected':''}>m</option>
+      <option value="peça" ${un==='peça'?'selected':''}>peça (ferragens, metais)</option>
+    </select>
+    <div class="row">
+      <div><label>Tenho em estoque</label><input id="${p}-estoque" type="number" step="0.01" inputmode="decimal" value="${m.estoque_atual??0}"></div>
+      <div><label>Avisar quando tiver menos de</label><input id="${p}-minimo" type="number" step="0.01" inputmode="decimal" value="${m.estoque_minimo??0}"></div>
+    </div>
+    <label>Fornecedor</label>
+    <select id="${p}-fornecedor" onchange="document.getElementById('${p}-fornecedor-nome').style.display=this.value?'none':'block'">
+      <option value="">— novo fornecedor / nenhum —</option>
+      ${(fornecedores||[]).map(f=>`<option value="${f.id}" ${m.fornecedor_id===f.id?'selected':''}>${f.nome}</option>`).join('')}
+    </select>
+    <input id="${p}-fornecedor-nome" placeholder="Nome do novo fornecedor (opcional)" style="margin-top:6px;display:${m.fornecedor_id?'none':'block'};">
+    <label>Referência / código no fornecedor</label><input id="${p}-ref" value="${escAttr(m.referencia)}">
+    <label>Foto</label>
+    <div style="margin-bottom:6px;">${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:70px;height:70px;">` : '<p class="muted">Sem foto ainda.</p>'}</div>
+    <input type="file" id="${p}-foto" accept="image/*">
     ${opcoesComFoto.length ? `
-    <label style="margin-top:8px;">Ou reaproveitar foto já cadastrada (ferragens, forro, etc.)</label>
-    <select id="nm-foto-opcao">
-      <option value="">— nenhuma —</option>
-      ${opcoesComFoto.map(o=>`<option value="${o.foto_url}">${o.campo}: ${o.valor}</option>`).join('')}
-    </select>` : ''}
-    <input type="hidden" id="nm-foto-atual" value="${fotoAtual||''}">
+    <label style="margin-top:8px;">Ou usar foto já cadastrada</label>
+    <select id="${p}-foto-opcao"><option value="">— nenhuma —</option>${opcoesComFoto.map(o=>`<option value="${o.foto_url}">${o.valor}</option>`).join('')}</select>` : ''}
+    <input type="hidden" id="${p}-foto-atual" value="${escAttr(m.foto_url)}">
   `;
 }
+async function lerFormMaterial(p, msg){
+  const nome = document.getElementById(`${p}-nome`).value.trim();
+  if(!nome){ msg.textContent = 'Informe o nome do material.'; return null; }
+  let fornecedor_id = document.getElementById(`${p}-fornecedor`).value;
+  const fornecedorNome = document.getElementById(`${p}-fornecedor-nome`).value.trim();
+  if(!fornecedor_id && fornecedorNome){
+    const { data, error } = await sb.from('fornecedores').insert({ nome: fornecedorNome }).select().single();
+    if(error){ msg.textContent = error.message; return null; }
+    fornecedor_id = data.id;
+  }
+  let foto_url = document.getElementById(`${p}-foto-atual`).value || null;
+  const file = document.getElementById(`${p}-foto`).files[0];
+  if(file){
+    msg.textContent = 'Enviando foto...';
+    const up = await uploadParaStorage('materiais', file);
+    if(up.error){ msg.textContent = 'Falhou ao enviar a foto: ' + up.error.message; return null; }
+    foto_url = up.url;
+  } else {
+    const op = document.getElementById(`${p}-foto-opcao`)?.value;
+    if(op) foto_url = op;
+  }
+  const v = id => document.getElementById(`${p}-${id}`).value.trim() || null;
+  return {
+    nome, categoria: v('categoria'), marca: v('marca'), cor: v('cor'), numero: v('numero'), tamanho: v('tamanho'),
+    unidade: document.getElementById(`${p}-unidade`).value,
+    fornecedor_id: fornecedor_id || null, referencia: v('ref'),
+    estoque_atual: Number(document.getElementById(`${p}-estoque`).value) || 0,
+    estoque_minimo: Number(document.getElementById(`${p}-minimo`).value) || 0,
+    foto_url,
+  };
+}
 async function novoMaterial(){
-  const { data: fornecedores } = await sb.from('fornecedores').select('*').order('nome');
-  const opcoesComFoto = await carregarOpcoesComFoto();
+  const [{ data: fornecedores }, opcoesComFoto] = await Promise.all([sb.from('fornecedores').select('*').order('nome'), carregarOpcoesComFoto()]);
+  const catInicial = (state.estoqueCat && state.estoqueCat!=='Todas') ? state.estoqueCat : null;
   showModal(`
     <h2>Novo material <button class="close" onclick="closeModal()">&times;</button></h2>
-    <label>Tipo</label><input id="nm-nome" placeholder="Ex: Fita de gorgurão">
-    <label>Categoria</label>
-    <select id="nm-categoria">
-      <option value="">—</option>
-      ${CATEGORIAS_MATERIAL.map(c=>`<option value="${c}">${c}</option>`).join('')}
-    </select>
-    <label>Marca</label><input id="nm-marca" placeholder="Ex: Marca X (importa pro pedido ao fornecedor)">
-    <label>Cor</label><input id="nm-cor" placeholder="Ex: Vermelho">
-    <label>Numeração da cor</label><input id="nm-numero" placeholder="Ex: 126">
-    <label>Tamanho</label><input id="nm-tamanho" placeholder="Ex: 5">
-    <label>Unidade</label>
-    <select id="nm-unidade"><option value="cm">cm</option><option value="m">m</option><option value="peça">peça</option></select>
-    <label>Fornecedor</label>
-    <select id="nm-fornecedor">
-      <option value="">— novo fornecedor —</option>
-      ${(fornecedores||[]).map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
-    </select>
-    <input id="nm-fornecedor-nome" placeholder="Nome do fornecedor" style="margin-top:6px;">
-    <label>Referência com o fornecedor</label><input id="nm-ref">
-    <label>Estoque atual</label><input id="nm-estoque" type="number" step="0.01" value="0">
-    <label>Estoque mínimo (alerta)</label><input id="nm-minimo" type="number" step="0.01" value="0">
-    ${fotoMaterialPickerHtml(opcoesComFoto, null)}
+    ${formMaterialHtml('nm', { categoria: catInicial }, fornecedores, opcoesComFoto)}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarMaterial()">Salvar</button>
     <p id="nm-msg" class="error"></p>
   `);
 }
 async function salvarMaterial(){
   const msg = document.getElementById('nm-msg');
-  const nome = document.getElementById('nm-nome').value.trim();
-  if(!nome){ msg.textContent='Informe o nome.'; return; }
-  let fornecedor_id = document.getElementById('nm-fornecedor').value;
-  const fornecedorNome = document.getElementById('nm-fornecedor-nome').value.trim();
-  if(!fornecedor_id && fornecedorNome){
-    const { data, error } = await sb.from('fornecedores').insert({ nome: fornecedorNome }).select().single();
-    if(error){ msg.textContent = error.message; return; }
-    fornecedor_id = data.id;
-  }
-  let foto_url = document.getElementById('nm-foto-atual').value || null;
-  const file = document.getElementById('nm-foto').files[0];
-  if(file){
-    const up = await uploadParaStorage('materiais', file);
-    if(up.error){ msg.textContent = 'Falhou ao enviar a foto: ' + up.error.message; return; }
-    foto_url = up.url;
-  } else {
-    const opcaoFoto = document.getElementById('nm-foto-opcao')?.value;
-    if(opcaoFoto) foto_url = opcaoFoto;
-  }
-  const payload = {
-    nome,
-    categoria: document.getElementById('nm-categoria').value || null,
-    marca: document.getElementById('nm-marca').value.trim() || null,
-    cor: document.getElementById('nm-cor').value.trim() || null,
-    numero: document.getElementById('nm-numero').value.trim() || null,
-    tamanho: document.getElementById('nm-tamanho').value.trim() || null,
-    unidade: document.getElementById('nm-unidade').value,
-    fornecedor_id: fornecedor_id || null,
-    referencia: document.getElementById('nm-ref').value,
-    estoque_atual: Number(document.getElementById('nm-estoque').value) || 0,
-    estoque_minimo: Number(document.getElementById('nm-minimo').value) || 0,
-    foto_url,
-  };
+  const payload = await lerFormMaterial('nm', msg); if(!payload) return;
   const { error } = await sb.from('materiais').insert(payload);
   if(error){ msg.textContent = error.message; return; }
   closeModal(); loadTab();
 }
 async function editarMaterial(id){
-  const { data: m } = await sb.from('materiais').select('*').eq('id', id).single();
-  const opcoesComFoto = await carregarOpcoesComFoto();
+  const [{ data: m }, { data: fornecedores }, opcoesComFoto] = await Promise.all([
+    sb.from('materiais').select('*').eq('id', id).single(), sb.from('fornecedores').select('*').order('nome'), carregarOpcoesComFoto()]);
   showModal(`
     <h2>${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
-    <label>Tipo</label><input id="em-nome" value="${(m.nome||'').replace(/"/g,'&quot;')}">
-    <label>Categoria</label>
-    <select id="em-categoria">
-      <option value="">—</option>
-      ${CATEGORIAS_MATERIAL.map(c=>`<option value="${c}" ${m.categoria===c?'selected':''}>${c}</option>`).join('')}
-    </select>
-    <label>Marca</label><input id="em-marca" value="${(m.marca||'').replace(/"/g,'&quot;')}">
-    <label>Cor</label><input id="em-cor" value="${(m.cor||'').replace(/"/g,'&quot;')}">
-    <label>Numeração da cor</label><input id="em-numero" value="${(m.numero||'').replace(/"/g,'&quot;')}">
-    <label>Tamanho</label><input id="em-tamanho" value="${(m.tamanho||'').replace(/"/g,'&quot;')}">
-    <label>Estoque atual</label><input id="em-estoque" type="number" step="0.01" value="${m.estoque_atual}">
-    <label>Estoque mínimo</label><input id="em-minimo" type="number" step="0.01" value="${m.estoque_minimo}">
-    ${fotoMaterialPickerHtml(opcoesComFoto, m.foto_url).replace('id="nm-foto"','id="em-foto"').replace('id="nm-foto-opcao"','id="em-foto-opcao"').replace('id="nm-foto-atual"','id="em-foto-atual"')}
+    ${formMaterialHtml('em', m, fornecedores, opcoesComFoto)}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoMaterial('${id}')">Salvar</button>
+    <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirMaterial('${id}')">Excluir material</button>
     <p id="em-msg" class="error"></p>
   `);
 }
 async function salvarEdicaoMaterial(id){
-  let foto_url = document.getElementById('em-foto-atual').value || null;
-  const file = document.getElementById('em-foto').files[0];
   const msg = document.getElementById('em-msg');
-  if(file){
-    const up = await uploadParaStorage('materiais', file);
-    if(up.error){ msg.textContent = 'Falhou ao enviar a foto: ' + up.error.message; return; }
-    foto_url = up.url;
-  } else {
-    const opcaoFoto = document.getElementById('em-foto-opcao')?.value;
-    if(opcaoFoto) foto_url = opcaoFoto;
-  }
-  const nome = document.getElementById('em-nome').value.trim();
-  if(!nome){ msg.textContent='Informe o tipo.'; return; }
-  const patch = {
-    nome,
-    categoria: document.getElementById('em-categoria').value || null,
-    marca: document.getElementById('em-marca').value.trim() || null,
-    cor: document.getElementById('em-cor').value.trim() || null,
-    numero: document.getElementById('em-numero').value.trim() || null,
-    tamanho: document.getElementById('em-tamanho').value.trim() || null,
-    estoque_atual: Number(document.getElementById('em-estoque').value) || 0,
-    estoque_minimo: Number(document.getElementById('em-minimo').value) || 0,
-    foto_url,
-  };
+  const patch = await lerFormMaterial('em', msg); if(!patch) return;
   const { error } = await sb.from('materiais').update(patch).eq('id', id);
   if(error){ msg.textContent = error.message; return; }
+  closeModal(); loadTab();
+}
+async function excluirMaterial(id){
+  const { count } = await sb.from('ficha_materiais').select('id', { count: 'exact', head: true }).eq('material_id', id);
+  if(count){ alert(`Esse material está em ${count} produto(s). Tire ele dos produtos antes de excluir.`); return; }
+  if(!confirm('Excluir esse material?')) return;
+  const { error } = await sb.from('materiais').delete().eq('id', id);
+  if(error){ alert(error.message); return; }
   closeModal(); loadTab();
 }
 
@@ -1472,8 +1574,9 @@ async function renderCalculadora(){
   const { data: fichas } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem)').eq('ativo', true).order('nome');
   window._calcFichasCache = fichas||[];
   c.innerHTML = `
-    <button class="btn ghost sm" onclick="state.materiaisView='lista'; loadTab();">‹ Materiais</button>
-    <h2 style="margin-top:14px;">Calculadora de materiais</h2>
+    <button class="btn ghost sm" onclick="state.materiaisView='lista'; loadTab();">‹ Estoque</button>
+    <h2 style="margin-top:14px;">Calcular materiais</h2>
+    <p class="muted">Veja quanto material precisa pra produzir uma quantidade, antes de fazer o pedido.</p>
     <label>Buscar tipo de peça</label>
     <input id="calc-busca" placeholder="Digite pra filtrar..." oninput="filtrarFichaPicker('calc-busca','calc-lista')">
     <div id="calc-lista" style="max-height:280px;overflow-y:auto;margin-top:8px;border:1px solid var(--border);border-radius:10px;">
@@ -1567,6 +1670,8 @@ async function renderRelatorio(){
   const todas = [...(pecas||[]), ...(pecas2||[])];
 
   let html = `
+    <div class="segmented"><button onclick="state.pessoaTipo='costureiras';loadTab();">Costureiras</button><button onclick="state.pessoaTipo='faccionistas';loadTab();">Faccionistas</button><button class="active">Fechamento</button></div>
+    <p class="muted">Fecha todo dia 20. Escolha um dia do período:</p>
     <div class="row" style="margin-bottom:6px;">
       <input type="date" value="${relatorioRef}" onchange="relatorioRef=this.value; loadTab();">
     </div>
