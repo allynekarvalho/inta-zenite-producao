@@ -580,7 +580,7 @@ function materialDe(id){
 }
 function materialChipsHtml(prefix, materiais, selecionados){
   return (materiais||[]).map(m => {
-    const ativo = selecionados[m.id] ? 'active' : '';
+    const ativo = (m.id in selecionados) ? 'active' : '';
     if(m.foto_url){
       return `<button type="button" class="chip chip-foto ${ativo}" data-nome="${m.nome.toLowerCase()}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">
         <img src="${m.foto_url}" alt=""><span>${m.nome}</span></button>`;
@@ -594,10 +594,10 @@ function toggleMaterialSelecionado(prefix, materialId){
   else window._pmSel[prefix][materialId] = null; // obriga a informar a medida usada nesse paramento
   rerenderMateriaisProduto(prefix);
 }
-function selecionadosMateriaisHtml(prefix){
+function selecionadosMateriaisHtml(prefix, cat){
   const sel = window._pmSel[prefix] || {};
-  const ids = Object.keys(sel);
-  if(!ids.length) return '<p class="muted">Nenhum material selecionado ainda.</p>';
+  const ids = Object.keys(sel).filter(id => { if(!cat) return true; const m = materialDe(id); return m && (m.categoria || 'Outro') === cat; });
+  if(!ids.length) return cat ? '' : '<p class="muted">Nenhum material selecionado ainda.</p>';
   return ids.map(id => {
     const m = materialDe(id);
     if(!m) return '';
@@ -607,7 +607,7 @@ function selecionadosMateriaisHtml(prefix){
     const falta = qtd - estoque;
     const fmt = (v) => m.unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${m.unidade||''}`;
     const detalhe = [m.marca, (m.cor&&m.numero)?`${m.cor} ${m.numero}`:(m.cor||m.numero), m.tamanho?`tam. ${m.tamanho}`:null].filter(Boolean).join(' · ');
-    return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:4px;">
+    return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:4px;background:var(--bg);border:1px solid var(--royal);border-radius:10px;padding:10px;margin-top:6px;">
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
         <div style="display:flex;gap:8px;align-items:center;">
           ${m.foto_url?`<img src="${m.foto_url}" class="foto-thumb" style="width:32px;height:32px;">`:''}
@@ -640,8 +640,7 @@ function rerenderMateriaisProduto(prefix){
     const el = document.getElementById(`${prefix}-mat-chips-${slug}`);
     if(el) el.innerHTML = materialChipsHtml(prefix, (window._prodMateriais||{})[cat]||[], window._pmSel[prefix]||{});
   });
-  const selDiv = document.getElementById(`${prefix}-mat-selecionados`);
-  if(selDiv) selDiv.innerHTML = selecionadosMateriaisHtml(prefix);
+  CATEGORIAS_MATERIAL.forEach(cat => { const d = document.getElementById(`${prefix}-mat-sel-${slugCat(cat)}`); if(d) d.innerHTML = selecionadosMateriaisHtml(prefix, cat); });
 }
 async function criarMaterialRapido(prefix, categoria){
   const slug = slugCat(categoria);
@@ -667,6 +666,7 @@ function categoriaMateriaisHtml(prefix, categoria){
     <div id="${prefix}-mat-chips-${slug}" class="chips">
       ${materialChipsHtml(prefix, materiais, window._pmSel[prefix]||{})}
     </div>
+    <div id="${prefix}-mat-sel-${slug}">${selecionadosMateriaisHtml(prefix, categoria)}</div>
     <div class="row" style="margin-top:6px;">
       <input id="${prefix}-novo-mat-${slug}" placeholder="Nome do novo material">
       <button type="button" class="btn ghost sm" onclick="criarMaterialRapido('${prefix}','${categoria}')">+ Adicionar</button>
@@ -676,10 +676,8 @@ function categoriaMateriaisHtml(prefix, categoria){
 function listaMateriaisHtml(prefix, outrosAviamentos){
   return `
     <h2 style="font-size:15px;margin-top:22px;">Lista de materiais</h2>
-    <p class="muted">Pode escolher mais de uma opção em cada categoria. Fornecedor, cor, numeração e foto de cada material se editam na aba Materiais.</p>
+    <p class="muted">Toque no material para escolher (fica azul) e coloque a medida usada logo abaixo. Pode escolher mais de um por categoria.</p>
     ${CATEGORIAS_MATERIAL.map(cat=>categoriaMateriaisHtml(prefix, cat)).join('')}
-    <h2 style="font-size:15px;margin-top:18px;">Selecionados</h2>
-    <div id="${prefix}-mat-selecionados">${selecionadosMateriaisHtml(prefix)}</div>
     <label style="margin-top:12px;">Outras observações</label>
     <textarea id="${prefix}-outros_aviamentos" rows="2" placeholder="Qualquer outro detalhe...">${(outrosAviamentos||'').replace(/</g,'&lt;')}</textarea>
   `;
