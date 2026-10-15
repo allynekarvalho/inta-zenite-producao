@@ -1,0 +1,14 @@
+name: Manter banco ativo
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consulta o Supabase para ele não pausar
+        run: |
+          curl -s -o /dev/null -w "%{http_code}\n" \
+            "https://ldkgwtdlajoodwsattex.supabase.co/rest/v1/materiais?select=id&limit=1" \
+            -H "apikey: sb_publishable_HUFpcJLnKSeQ3EiXXco0iw_PXv73xgO"
