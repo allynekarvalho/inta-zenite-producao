@@ -1667,7 +1667,7 @@ function atualizarCalcTotais(){
     const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
     return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:2px;">
       <div style="display:flex;justify-content:space-between;width:100%;">
-        <span>${m.materiais?.nome} <span class="muted" style="font-size:11px;">(${fmt(m.quantidade_por_unidade)} cada)</span></span><span><b>${fmt(total)}</b>${emRolos}</span>
+        <span style="display:flex;gap:8px;align-items:center;">${m.materiais?.foto_url?`<img src="${m.materiais.foto_url}" class="foto-thumb" style="width:40px;height:40px;">`:`<span class="foto-thumb" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;">📦</span>`}<span>${m.materiais?.nome} <span class="muted" style="font-size:11px;">(${fmt(m.quantidade_por_unidade)} cada)</span></span></span><span style="text-align:right;"><b>${fmt(total)}</b>${emRolos}</span>
       </div>
       <div class="muted" style="font-size:12px;">Em estoque: ${fmtEstoque(m.materiais||{}, estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${faltaTxt}</span>`:' — ok'}</div>
     </div>`;
