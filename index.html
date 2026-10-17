@@ -1359,11 +1359,11 @@ async function renderMateriais(){
     </div>`;
   if(comprar.length){
     html += `
-    <div class="card" style="margin-top:14px;border-color:var(--danger);">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong style="color:var(--danger);">⚠️ Precisa comprar (${comprar.length})</strong>
-        <button class="btn ghost sm" onclick="copiarListaCompras()">Copiar lista</button>
-      </div>
+    <details class="card" style="margin-top:14px;border-color:var(--danger);">
+      <summary style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;list-style:none;">
+        <strong style="color:var(--danger);">⚠️ Precisa comprar (${comprar.length}) <span class="muted" style="font-weight:400;">› ver</span></strong>
+        <button class="btn ghost sm" onclick="event.preventDefault();event.stopPropagation();copiarListaCompras()">Copiar lista</button>
+      </summary>
       ${comprar.map(m => {
         const est = Number(m.estoque_atual)||0, min = Number(m.estoque_minimo)||0;
         const precisa = Math.max(min - est, est < 0 ? -est : 0);
@@ -1371,7 +1371,7 @@ async function renderMateriais(){
           <span>${m.nome}${detalheMaterial(m)?`<div class="muted" style="font-size:11px;">${detalheMaterial(m)}</div>`:''}</span>
           <span style="text-align:right;white-space:nowrap;"><b>${embInfo(m)?Math.ceil(precisa/embInfo(m).q)+" "+plural(embInfo(m).emb, Math.ceil(precisa/embInfo(m).q)):fmtQtd(precisa, m.unidade)}</b><div class="muted" style="font-size:11px;">tem ${fmtQtd(est, m.unidade)}</div></span>
         </div>`; }).join('')}
-    </div>`;
+    </details>`;
   }
   html += `
     <input id="est-busca" placeholder="🔍 Buscar material..." style="margin-top:14px;" oninput="filtrarEstoque()">
