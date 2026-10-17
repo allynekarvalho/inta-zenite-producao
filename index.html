@@ -1321,6 +1321,14 @@ async function salvarValor(id, valoresTabela, fk){
 
 // ================= ESTOQUE (materiais) =================
 function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function embInfo(m){ var q=Number(m&&m.qtd_por_embalagem)||0; return (m&&m.embalagem&&q>0) ? {emb:m.embalagem, q:q} : null; }
+function plural(emb, n){ return n===1 ? emb : (emb.slice(-1)==='l' ? emb.slice(0,-1)+'is' : emb+'s'); }
+function fmtEstoque(m, v){
+  var e = embInfo(m), base = fmtQtd(v, m.unidade);
+  if(!e) return base;
+  var n = (Number(v)||0)/e.q, nTxt = n.toLocaleString('pt-BR',{maximumFractionDigits:1});
+  return nTxt+' '+plural(e.emb, n)+' <span style="font-size:12px;font-weight:400;opacity:.75;">('+base+')</span>';
+}
 function fmtQtd(v, unidade){
   const n = Number(v)||0;
   if(unidade === 'cm') return formatMedida(n, 'cm');
@@ -1361,7 +1369,7 @@ async function renderMateriais(){
         const precisa = Math.max(min - est, est < 0 ? -est : 0);
         return `<div class="item" onclick="editarMaterial('${m.id}')" style="cursor:pointer;">
           <span>${m.nome}${detalheMaterial(m)?`<div class="muted" style="font-size:11px;">${detalheMaterial(m)}</div>`:''}</span>
-          <span style="text-align:right;white-space:nowrap;"><b>${fmtQtd(precisa, m.unidade)}</b><div class="muted" style="font-size:11px;">tem ${fmtQtd(est, m.unidade)}</div></span>
+          <span style="text-align:right;white-space:nowrap;"><b>${embInfo(m)?Math.ceil(precisa/embInfo(m).q)+" "+plural(embInfo(m).emb, Math.ceil(precisa/embInfo(m).q)):fmtQtd(precisa, m.unidade)}</b><div class="muted" style="font-size:11px;">tem ${fmtQtd(est, m.unidade)}</div></span>
         </div>`; }).join('')}
     </div>`;
   }
@@ -1401,8 +1409,8 @@ function filtrarEstoque(){
             ${m.fornecedores?.nome?`<div class="muted" style="font-size:12px;">${m.fornecedores.nome}${m.referencia?(' · ref '+m.referencia):''}</div>`:''}
           </div>
           <div style="text-align:right;white-space:nowrap;">
-            <div style="font-size:17px;font-weight:700;color:${cor};">${fmtQtd(m.estoque_atual, m.unidade)}</div>
-            ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtQtd(m.estoque_minimo, m.unidade)}</div>`:''}
+            <div style="font-size:17px;font-weight:700;color:${cor};">${fmtEstoque(m, m.estoque_atual)}</div>
+            ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtEstoque(m, m.estoque_minimo)}</div>`:''}
           </div>
         </div>
         <div class="row" style="margin-top:10px;">
@@ -1422,7 +1430,7 @@ function copiarListaCompras(){
     porForn[f].forEach(m => {
       const est = Number(m.estoque_atual)||0, min = Number(m.estoque_minimo)||0;
       const precisa = Math.max(min - est, est < 0 ? -est : 0);
-      txt += `• ${m.nome}${detalheMaterial(m)?' ('+detalheMaterial(m)+')':''}${m.referencia?' ref '+m.referencia:''}: ${fmtQtd(precisa, m.unidade)}\n`;
+      txt += `• ${m.nome}${detalheMaterial(m)?' ('+detalheMaterial(m)+')':''}${m.referencia?' ref '+m.referencia:''}: ${embInfo(m)?Math.ceil(precisa/embInfo(m).q)+' '+plural(embInfo(m).emb, Math.ceil(precisa/embInfo(m).q))+' de '+fmtQtd(embInfo(m).q, m.unidade):fmtQtd(precisa, m.unidade)}\n`;
     });
   });
   navigator.clipboard.writeText(txt).then(()=>alert('Lista copiada! É só colar no WhatsApp.')).catch(()=>alert(txt));
@@ -1431,9 +1439,9 @@ function entradaMaterial(id){
   const m = (window._estoqueCache||[]).find(x=>x.id===id); if(!m) return;
   showModal(`
     <h2>Entrada: ${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
-    <p class="muted">Tem agora: <b>${fmtQtd(m.estoque_atual, m.unidade)}</b></p>
-    <label>Quanto chegou (${m.unidade||'un.'})</label>
-    <input id="ent-qtd" type="number" step="0.01" inputmode="decimal" placeholder="Ex: ${m.unidade==='cm'?'9000 (= 90 m)':'10'}">
+    <p class="muted">Tem agora: <b>${fmtEstoque(m, m.estoque_atual)}</b></p>
+    <label>${embInfo(m) ? 'Quantos '+plural(m.embalagem,2)+' chegaram' : 'Quanto chegou ('+(m.unidade||'un.')+')'}</label>
+    <input id="ent-qtd" type="number" step="0.01" inputmode="decimal" placeholder="Ex: 10">
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEntrada('${id}')">Somar ao estoque</button>
     <p id="ent-msg" class="error"></p>
   `);
@@ -1443,9 +1451,10 @@ async function salvarEntrada(id){
   const qtd = Number(document.getElementById('ent-qtd').value);
   const msg = document.getElementById('ent-msg');
   if(!qtd){ msg.textContent = 'Informe a quantidade.'; return; }
-  const { data: m, error: e1 } = await sb.from('materiais').select('estoque_atual').eq('id', id).single();
+  const { data: m, error: e1 } = await sb.from('materiais').select('estoque_atual,embalagem,qtd_por_embalagem').eq('id', id).single();
   if(e1){ msg.textContent = e1.message; return; }
-  const { error } = await sb.from('materiais').update({ estoque_atual: (Number(m.estoque_atual)||0) + qtd }).eq('id', id);
+  const fator = embInfo(m) ? embInfo(m).q : 1;
+  const { error } = await sb.from('materiais').update({ estoque_atual: (Number(m.estoque_atual)||0) + qtd*fator }).eq('id', id);
   if(error){ msg.textContent = error.message; return; }
   closeModal(); loadTab();
 }
@@ -1453,9 +1462,17 @@ async function carregarOpcoesComFoto(){
   const { data } = await sb.from('opcoes_descricao').select('campo,valor,foto_url').not('foto_url', 'is', null).order('valor');
   return data||[];
 }
+function atualizarEmbForm(p){
+  const emb = document.getElementById(p+'-emb').value, un = document.getElementById(p+'-unidade').value;
+  document.getElementById(p+'-qpe-w').style.display = emb ? 'block' : 'none';
+  document.getElementById(p+'-qpe-lbl').textContent = `Quanto vem em cada ${emb||'rolo'} (${un})`;
+  const e = emb ? plural(emb,2) : un;
+  document.getElementById(p+'-est-lbl').textContent = `Tenho em estoque (${e})`;
+  document.getElementById(p+'-min-lbl').textContent = `Avisar com menos de (${e})`;
+}
 function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
   m = m || {};
-  const un = m.unidade || 'cm';
+  const un = m.unidade || 'm';
   return `
     <label>Nome do material</label><input id="${p}-nome" value="${escAttr(m.nome)}" placeholder="Ex: Fita de gorgurão">
     <label>Categoria</label>
@@ -1471,15 +1488,24 @@ function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
       <div><label>Marca</label><input id="${p}-marca" value="${escAttr(m.marca)}"></div>
       <div><label>Tamanho / largura</label><input id="${p}-tamanho" value="${escAttr(m.tamanho)}" placeholder="Ex: 5 cm"></div>
     </div>
-    <label>Unidade de medida</label>
-    <select id="${p}-unidade">
-      <option value="cm" ${un==='cm'?'selected':''}>cm (fitas, tecidos, elástico)</option>
-      <option value="m" ${un==='m'?'selected':''}>m</option>
+    <label>Unidade usada no paramento</label>
+    <select id="${p}-unidade" onchange="atualizarEmbForm('${p}')">
+      <option value="m" ${un==='m'?'selected':''}>metro (m)</option>
+      <option value="cm" ${un==='cm'?'selected':''}>centímetro (cm)</option>
       <option value="peça" ${un==='peça'?'selected':''}>peça (ferragens, metais)</option>
     </select>
+    <label>Como você compra / guarda</label>
+    <select id="${p}-emb" onchange="atualizarEmbForm('${p}')">
+      <option value="" ${!m.embalagem?'selected':''}>Avulso (conto direto na unidade)</option>
+      ${['rolo','pacote','cartela','caixa','peça de tecido'].map(e=>`<option value="${e}" ${m.embalagem===e?'selected':''}>Em ${e}</option>`).join('')}
+    </select>
+    <div id="${p}-qpe-w" style="display:${m.embalagem?'block':'none'};">
+      <label id="${p}-qpe-lbl">Quanto vem em cada ${m.embalagem||'rolo'} (${un})</label>
+      <input id="${p}-qpe" type="number" step="0.01" inputmode="decimal" value="${m.qtd_por_embalagem||''}" placeholder="Ex: 10">
+    </div>
     <div class="row">
-      <div><label>Tenho em estoque</label><input id="${p}-estoque" type="number" step="0.01" inputmode="decimal" value="${m.estoque_atual??0}"></div>
-      <div><label>Avisar quando tiver menos de</label><input id="${p}-minimo" type="number" step="0.01" inputmode="decimal" value="${m.estoque_minimo??0}"></div>
+      <div><label id="${p}-est-lbl">Tenho em estoque</label><input id="${p}-estoque" type="number" step="0.01" inputmode="decimal" value="${embInfo(m) ? +((Number(m.estoque_atual)||0)/embInfo(m).q).toFixed(2) : (m.estoque_atual??0)}"></div>
+      <div><label id="${p}-min-lbl">Avisar quando tiver menos de</label><input id="${p}-minimo" type="number" step="0.01" inputmode="decimal" value="${embInfo(m) ? +((Number(m.estoque_minimo)||0)/embInfo(m).q).toFixed(2) : (m.estoque_minimo??0)}"></div>
     </div>
     <label>Fornecedor</label>
     <select id="${p}-fornecedor" onchange="document.getElementById('${p}-fornecedor-nome').style.display=this.value?'none':'block'">
@@ -1497,9 +1523,11 @@ function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
     <input type="hidden" id="${p}-foto-atual" value="${escAttr(m.foto_url)}">
   `;
 }
+function fatorEmb(p){ const emb=document.getElementById(p+'-emb').value, q=Number(document.getElementById(p+'-qpe').value)||0; return (emb && q>0) ? q : 1; }
 async function lerFormMaterial(p, msg){
   const nome = document.getElementById(`${p}-nome`).value.trim();
   if(!nome){ msg.textContent = 'Informe o nome do material.'; return null; }
+  if(document.getElementById(`${p}-emb`).value && !(Number(document.getElementById(`${p}-qpe`).value)>0)){ msg.textContent = 'Informe quanto vem em cada '+document.getElementById(`${p}-emb`).value+'.'; return null; }
   let fornecedor_id = document.getElementById(`${p}-fornecedor`).value;
   const fornecedorNome = document.getElementById(`${p}-fornecedor-nome`).value.trim();
   if(!fornecedor_id && fornecedorNome){
@@ -1522,9 +1550,11 @@ async function lerFormMaterial(p, msg){
   return {
     nome, categoria: v('categoria'), marca: v('marca'), cor: v('cor'), numero: v('numero'), tamanho: v('tamanho'),
     unidade: document.getElementById(`${p}-unidade`).value,
+    embalagem: document.getElementById(`${p}-emb`).value || null,
+    qtd_por_embalagem: document.getElementById(`${p}-emb`).value ? (Number(document.getElementById(`${p}-qpe`).value) || null) : null,
     fornecedor_id: fornecedor_id || null, referencia: v('ref'),
-    estoque_atual: Number(document.getElementById(`${p}-estoque`).value) || 0,
-    estoque_minimo: Number(document.getElementById(`${p}-minimo`).value) || 0,
+    estoque_atual: (Number(document.getElementById(`${p}-estoque`).value) || 0) * fatorEmb(p),
+    estoque_minimo: (Number(document.getElementById(`${p}-minimo`).value) || 0) * fatorEmb(p),
     foto_url,
   };
 }
@@ -1537,6 +1567,7 @@ async function novoMaterial(){
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarMaterial()">Salvar</button>
     <p id="nm-msg" class="error"></p>
   `);
+  atualizarEmbForm('nm');
 }
 async function salvarMaterial(){
   const msg = document.getElementById('nm-msg');
@@ -1555,6 +1586,7 @@ async function editarMaterial(id){
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirMaterial('${id}')">Excluir material</button>
     <p id="em-msg" class="error"></p>
   `);
+  atualizarEmbForm('em');
 }
 async function salvarEdicaoMaterial(id){
   const msg = document.getElementById('em-msg');
