@@ -566,7 +566,7 @@ function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,
 window._pmSel = window._pmSel || {};
 
 async function carregarMateriaisCategorias(){
-  const { data } = await sb.from('materiais').select('id,nome,categoria,foto_url,unidade,estoque_atual').order('nome');
+  const { data } = await sb.from('materiais').select('*').order('nome');
   const map = {};
   (data||[]).forEach(m => { const cat = m.categoria || 'Outro'; (map[cat]=map[cat]||[]).push(m); });
   window._prodMateriais = map;
@@ -615,9 +615,9 @@ function selecionadosMateriaisHtml(prefix, cat){
         </div>
         <button type="button" class="btn ghost sm" onclick="toggleMaterialSelecionado('${prefix}','${id}')">Remover</button>
       </div>
-      <label style="font-size:12px;margin:2px 0 0;">Medida usada neste paramento (${m.unidade||'un.'})</label>
-      <input type="number" step="0.01" placeholder="Ex: ${m.unidade==='cm'?'90':'1'}" value="${qtdBruta==null?'':qtdBruta}" style="width:110px;" oninput="window._pmSel['${prefix}']['${id}']=this.value===''?null:(Number(this.value)||0); atualizarEstoqueItem('${prefix}','${id}');">
-      <div class="muted" id="${prefix}-estoque-${id}" style="font-size:12px;">${qtdBruta==null ? 'Informe a medida pra ver o que falta no estoque.' : `Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`}</div>
+      <label style="font-size:12px;margin:2px 0 0;">Quanto usa em 1 paramento — <b>em ${m.unidade==='m'?'METROS':m.unidade==='cm'?'CENTÍMETROS':'PEÇAS'}</b></label>
+      <input type="text" inputmode="decimal" placeholder="Ex: ${m.unidade==='cm'?'175':m.unidade==='m'?'1,75':'1'}" value="${qtdBruta==null?'':String(qtdBruta).replace('.',',')}" style="width:130px;" oninput="window._pmSel['${prefix}']['${id}']=this.value.trim()===''?null:(parseFloat(this.value.replace(',','.'))||0); atualizarEstoqueItem('${prefix}','${id}');">
+      <div class="muted" id="${prefix}-estoque-${id}" style="font-size:12px;">${qtdBruta==null ? 'Informe a medida pra ver o que falta no estoque.' : `Em estoque: ${fmtEstoque(m, estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`}</div>
     </div>`;
   }).join('');
 }
@@ -632,7 +632,7 @@ function atualizarEstoqueItem(prefix, materialId){
   const estoque = Number(m.estoque_atual) || 0;
   const falta = qtd - estoque;
   const fmt = (v) => m.unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${m.unidade||''}`;
-  el.innerHTML = `Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`;
+  el.innerHTML = `Em estoque: ${fmtEstoque(m, estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`;
 }
 function rerenderMateriaisProduto(prefix){
   CATEGORIAS_MATERIAL.forEach(cat => {
@@ -1634,7 +1634,7 @@ function calcSelecionarFicha(id){
   if(f) selecionarFichaCalc(f.id, f.nome);
 }
 async function selecionarFichaCalc(fichaId, nome){
-  const { data: materiais } = await sb.from('ficha_materiais').select('*, materiais(nome,unidade,estoque_atual)').eq('ficha_id', fichaId).order('ordem');
+  const { data: materiais } = await sb.from('ficha_materiais').select('*, materiais(*)').eq('ficha_id', fichaId).order('ordem');
   const div = document.getElementById('calc-resultado');
   div.innerHTML = `
     <h2 style="font-size:15px;margin-top:18px;">${nome}</h2>
@@ -1660,13 +1660,16 @@ function atualizarCalcTotais(){
   totaisDiv.innerHTML = materiais.map(m => {
     const total = Number(m.quantidade_por_unidade) * qtd;
     const unidade = m.materiais?.unidade;
-    const fmt = (v) => unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${unidade||''}`;
+    const fmt = (v) => fmtQtd(v, unidade);
     const { estoque, falta } = cruzarEstoque(m, total);
+    const e = embInfo(m.materiais||{});
+    const emRolos = e ? ` <span class="muted" style="font-size:12px;">(≈ ${(total/e.q).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${plural(e.emb,2)})</span>` : '';
+    const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
     return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:2px;">
       <div style="display:flex;justify-content:space-between;width:100%;">
-        <span>${m.materiais?.nome}</span><span>${fmt(total)}</span>
+        <span>${m.materiais?.nome} <span class="muted" style="font-size:11px;">(${fmt(m.quantidade_por_unidade)} cada)</span></span><span><b>${fmt(total)}</b>${emRolos}</span>
       </div>
-      <div class="muted" style="font-size:12px;">Em estoque: ${fmt(estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok'}</div>
+      <div class="muted" style="font-size:12px;">Em estoque: ${fmtEstoque(m.materiais||{}, estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${faltaTxt}</span>`:' — ok'}</div>
     </div>`;
   }).join('') || '<p class="muted">Sem materiais cadastrados pra essa ficha.</p>';
 }
