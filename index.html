@@ -1663,7 +1663,7 @@ function atualizarCalcTotais(){
     const fmt = (v) => fmtQtd(v, unidade);
     const { estoque, falta } = cruzarEstoque(m, total);
     const e = embInfo(m.materiais||{});
-    const emRolos = e ? ` <span class="muted" style="font-size:12px;">(≈ ${(total/e.q).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${plural(e.emb,2)})</span>` : '';
+    const emRolos = (e && total >= e.q) ? ` <span class="muted" style="font-size:12px;">(≈ ${(total/e.q).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${plural(e.emb,2)})</span>` : '';
     const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
     return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:2px;">
       <div style="display:flex;justify-content:space-between;width:100%;">
