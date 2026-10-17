@@ -632,6 +632,7 @@ function atualizarEstoqueItem(prefix, materialId){
   const estoque = Number(m.estoque_atual) || 0;
   const falta = qtd - estoque;
   const fmt = (v) => m.unidade === 'cm' ? formatMedida(v, 'cm') : `${v} ${m.unidade||''}`;
+  atualizarCustoProduto(prefix);
   el.innerHTML = `Em estoque: ${fmtEstoque(m, estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`;
 }
 function rerenderMateriaisProduto(prefix){
@@ -641,6 +642,7 @@ function rerenderMateriaisProduto(prefix){
     if(el) el.innerHTML = materialChipsHtml(prefix, (window._prodMateriais||{})[cat]||[], window._pmSel[prefix]||{});
   });
   CATEGORIAS_MATERIAL.forEach(cat => { const d = document.getElementById(`${prefix}-mat-sel-${slugCat(cat)}`); if(d) d.innerHTML = selecionadosMateriaisHtml(prefix, cat); });
+  atualizarCustoProduto(prefix);
 }
 async function criarMaterialRapido(prefix, categoria){
   const slug = slugCat(categoria);
@@ -678,6 +680,7 @@ function listaMateriaisHtml(prefix, outrosAviamentos){
     <h2 style="font-size:15px;margin-top:22px;">Lista de materiais</h2>
     <p class="muted">Toque no material para escolher (fica azul) e coloque a medida usada logo abaixo. Pode escolher mais de um por categoria.</p>
     ${CATEGORIAS_MATERIAL.map(cat=>categoriaMateriaisHtml(prefix, cat)).join('')}
+    <div class="card" id="${prefix}-custo" style="margin-top:14px;">${custoProdutoHtml(prefix)}</div>
     <label style="margin-top:12px;">Outras observações</label>
     <textarea id="${prefix}-outros_aviamentos" rows="2" placeholder="Qualquer outro detalhe...">${(outrosAviamentos||'').replace(/</g,'&lt;')}</textarea>
   `;
@@ -1078,7 +1081,7 @@ async function materiaisDoPedido(pecas){
   const div = document.getElementById('pedido-materiais'); if(!div) return;
   const fichaIds = [...new Set(pecas.map(p=>p.ficha_id).filter(Boolean))];
   if(!fichaIds.length){ div.textContent = 'Nenhuma peça ainda.'; return; }
-  const { data: fm } = await sb.from('ficha_materiais').select('ficha_id, quantidade_por_unidade, materiais(id,nome,unidade,estoque_atual,cor,numero,marca,tamanho)').in('ficha_id', fichaIds);
+  const { data: fm } = await sb.from('ficha_materiais').select('ficha_id, quantidade_por_unidade, materiais(*)').in('ficha_id', fichaIds);
   const tot = {};
   pecas.forEach(p => (fm||[]).filter(r=>r.ficha_id===p.ficha_id && r.materiais).forEach(r => {
     const k = r.materiais.id; tot[k] = tot[k] || { m: r.materiais, q: 0 };
@@ -1086,10 +1089,11 @@ async function materiaisDoPedido(pecas){
   }));
   const linhas = Object.values(tot);
   if(!linhas.length){ div.textContent = 'Os produtos deste pedido ainda não têm lista de materiais.'; return; }
+  let custoTot = 0;
   div.innerHTML = linhas.map(x => {
-    const est = Number(x.m.estoque_atual)||0;
+    const est = Number(x.m.estoque_atual)||0; const cu = custoUnit(x.m); if(cu!=null) custoTot += cu*x.q;
     return `<div class="item"><span style="color:var(--ink);">${x.m.nome}${detalheMaterial(x.m)?`<div class="muted" style="font-size:11px;">${detalheMaterial(x.m)}</div>`:''}</span><span style="text-align:right;white-space:nowrap;"><b style="color:var(--ink);">${fmtQtd(x.q, x.m.unidade)}</b><div style="font-size:11px;color:${est<0?'var(--danger)':'var(--muted)'};">estoque: ${fmtQtd(est, x.m.unidade)}</div></span></div>`;
-  }).join('') + '<p class="muted" style="font-size:11px;margin-top:6px;">Esse material já sai do estoque quando a peça é lançada no pedido.</p>';
+  }).join('') + `<div style="display:flex;justify-content:space-between;padding:10px 0;color:var(--ink);"><strong>💰 Custo de material do pedido</strong><strong>${money(custoTot)}</strong></div>` + '<p class="muted" style="font-size:11px;margin-top:6px;">Esse material já sai do estoque quando a peça é lançada no pedido.</p>';
 }
 
 async function adicionarPeca(pedidoId){
@@ -1321,6 +1325,14 @@ async function salvarValor(id, valoresTabela, fk){
 
 // ================= ESTOQUE (materiais) =================
 function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function custoUnit(m){ const pr=Number(m&&m.preco)||0; if(!(pr>0)) return null; const e=embInfo(m); return e ? pr/e.q : pr; }
+function custoProdutoHtml(prefix){
+  const sel = window._pmSel[prefix] || {}; let tot = 0, semPreco = [];
+  Object.keys(sel).forEach(id => { const m = materialDe(id); if(!m) return; const cu = custoUnit(m); const q = Number(sel[id])||0; if(cu==null){ if(q) semPreco.push(m.nome); return; } tot += cu*q; });
+  return `<div style="display:flex;justify-content:space-between;align-items:center;"><strong>💰 Custo de material por paramento</strong><strong style="font-size:17px;">${money(tot)}</strong></div>`+
+    (semPreco.length ? `<div class="muted" style="font-size:12px;margin-top:4px;">Sem preço cadastrado: ${semPreco.join(', ')}</div>` : '');
+}
+function atualizarCustoProduto(prefix){ const d=document.getElementById(prefix+'-custo'); if(d) d.innerHTML = custoProdutoHtml(prefix); }
 function embInfo(m){ var q=Number(m&&m.qtd_por_embalagem)||0; return (m&&m.embalagem&&q>0) ? {emb:m.embalagem, q:q} : null; }
 function plural(emb, n){ return n===1 ? emb : (emb.slice(-1)==='l' ? emb.slice(0,-1)+'is' : emb+'s'); }
 function fmtEstoque(m, v){
@@ -1411,6 +1423,7 @@ function filtrarEstoque(){
           <div style="text-align:right;white-space:nowrap;">
             <div style="font-size:17px;font-weight:700;color:${cor};">${fmtEstoque(m, m.estoque_atual)}</div>
             ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtEstoque(m, m.estoque_minimo)}</div>`:''}
+            ${Number(m.preco)>0?`<div class="muted" style="font-size:11px;">${money(m.preco)} / ${m.embalagem||m.unidade}</div>`:''}
           </div>
         </div>
         <div class="row" style="margin-top:10px;">
@@ -1469,6 +1482,7 @@ function atualizarEmbForm(p){
   const e = emb ? plural(emb,2) : un;
   document.getElementById(p+'-est-lbl').textContent = `Tenho em estoque (${e})`;
   document.getElementById(p+'-min-lbl').textContent = `Avisar com menos de (${e})`;
+  const pl=document.getElementById(p+'-preco-lbl'); if(pl) pl.textContent = `Preço pago (R$) por ${emb||(un==='peça'?'peça':un==='m'?'metro':'centímetro')}`;
 }
 function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
   m = m || {};
@@ -1513,6 +1527,7 @@ function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
       ${(fornecedores||[]).map(f=>`<option value="${f.id}" ${m.fornecedor_id===f.id?'selected':''}>${f.nome}</option>`).join('')}
     </select>
     <input id="${p}-fornecedor-nome" placeholder="Nome do novo fornecedor (opcional)" style="margin-top:6px;display:${m.fornecedor_id?'none':'block'};">
+    <label id="${p}-preco-lbl">Preço pago (R$)</label><input id="${p}-preco" type="text" inputmode="decimal" value="${m.preco!=null?String(m.preco).replace('.',','):''}" placeholder="Ex: 25,90">
     <label>Referência / código no fornecedor</label><input id="${p}-ref" value="${escAttr(m.referencia)}">
     <label>Foto</label>
     <div style="margin-bottom:6px;">${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:70px;height:70px;">` : '<p class="muted">Sem foto ainda.</p>'}</div>
@@ -1551,6 +1566,7 @@ async function lerFormMaterial(p, msg){
     nome, categoria: v('categoria'), marca: v('marca'), cor: v('cor'), numero: v('numero'), tamanho: v('tamanho'),
     unidade: document.getElementById(`${p}-unidade`).value,
     embalagem: document.getElementById(`${p}-emb`).value || null,
+    preco: (parseFloat(String(document.getElementById(`${p}-preco`).value).replace(/\./g,'').replace(',','.'))||null),
     qtd_por_embalagem: document.getElementById(`${p}-emb`).value ? (Number(document.getElementById(`${p}-qpe`).value) || null) : null,
     fornecedor_id: fornecedor_id || null, referencia: v('ref'),
     estoque_atual: (Number(document.getElementById(`${p}-estoque`).value) || 0) * fatorEmb(p),
@@ -1657,21 +1673,23 @@ function atualizarCalcTotais(){
   const materiais = JSON.parse(div.dataset.materiais || '[]');
   const qtd = Number(document.getElementById('calc-qtd').value) || 0;
   const totaisDiv = document.getElementById('calc-totais');
+  window._calcCusto = 0;
   totaisDiv.innerHTML = materiais.map(m => {
     const total = Number(m.quantidade_por_unidade) * qtd;
     const unidade = m.materiais?.unidade;
     const fmt = (v) => fmtQtd(v, unidade);
     const { estoque, falta } = cruzarEstoque(m, total);
-    const e = embInfo(m.materiais||{});
+    const e = embInfo(m.materiais||{}); const cu = custoUnit(m.materiais||{}); const custo = cu!=null ? cu*total : null; window._calcCusto = (window._calcCusto||0) + (custo||0);
     const emRolos = (e && total >= e.q) ? ` <span class="muted" style="font-size:12px;">(≈ ${(total/e.q).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${plural(e.emb,2)})</span>` : '';
     const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
     return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:2px;">
       <div style="display:flex;justify-content:space-between;width:100%;">
-        <span style="display:flex;gap:8px;align-items:center;">${m.materiais?.foto_url?`<img src="${m.materiais.foto_url}" class="foto-thumb" style="width:40px;height:40px;">`:`<span class="foto-thumb" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;">📦</span>`}<span>${m.materiais?.nome} <span class="muted" style="font-size:11px;">(${fmt(m.quantidade_por_unidade)} cada)</span></span></span><span style="text-align:right;"><b>${fmt(total)}</b>${emRolos}</span>
+        <span style="display:flex;gap:8px;align-items:center;">${m.materiais?.foto_url?`<img src="${m.materiais.foto_url}" class="foto-thumb" style="width:40px;height:40px;">`:`<span class="foto-thumb" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;">📦</span>`}<span>${m.materiais?.nome} <span class="muted" style="font-size:11px;">(${fmt(m.quantidade_por_unidade)} cada)</span></span></span><span style="text-align:right;"><b>${fmt(total)}</b>${emRolos}${custo!=null?`<div style="font-size:12px;">${money(custo)}</div>`:''}</span>
       </div>
       <div class="muted" style="font-size:12px;">Em estoque: ${fmtEstoque(m.materiais||{}, estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${faltaTxt}</span>`:' — ok'}</div>
     </div>`;
   }).join('') || '<p class="muted">Sem materiais cadastrados pra essa ficha.</p>';
+  if(materiais.length) totaisDiv.innerHTML += `<div class="card" style="margin-top:10px;display:flex;justify-content:space-between;"><strong>💰 Custo de material (${qtd} un.)</strong><strong>${money(window._calcCusto)}</strong></div>`;
 }
 function copiarCalculo(nomeFicha){
   const qtd = document.getElementById('calc-qtd').value;
@@ -1765,6 +1783,15 @@ async function renderRelatorio(){
     </div>`;
   }).join('');
 
+  try{
+    const fids = [...new Set(todas.map(p=>p.ficha_id).filter(Boolean))];
+    if(fids.length){
+      const { data: fmr } = await sb.from('ficha_materiais').select('ficha_id, quantidade_por_unidade, materiais(*)').in('ficha_id', fids);
+      let custoMat = 0;
+      todas.forEach(p => (fmr||[]).filter(r=>r.ficha_id===p.ficha_id && r.materiais).forEach(r => { const cu = custoUnit(r.materiais); if(cu!=null) custoMat += cu*(Number(r.quantidade_por_unidade)||0)*(Number(p.quantidade)||0); }));
+      html += `<div class="card" style="margin-top:10px;"><div style="display:flex;justify-content:space-between;"><strong>🧵 Custo de materiais das peças prontas</strong><strong>${money(custoMat)}</strong></div><div style="display:flex;justify-content:space-between;margin-top:6px;"><span>💰 Total do período (mão de obra + material)</span><strong>${money(totalGeral+custoMat)}</strong></div></div>`;
+    }
+  }catch(e){}
   html += `<button class="btn ghost block" style="margin-top:10px;" onclick="window.print()">Imprimir / Salvar PDF</button>`;
   c.innerHTML = html;
 }
