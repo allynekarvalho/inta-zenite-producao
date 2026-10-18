@@ -1405,7 +1405,9 @@ function filtrarEstoque(){
   if(!lista.length){ div.innerHTML = '<div class="card center muted">Nenhum material encontrado.</div>'; return; }
   const grupos = {};
   lista.forEach(m => { const cat = m.categoria || 'Outro'; (grupos[cat]=grupos[cat]||[]).push(m); });
-  const ordem = CATEGORIAS_MATERIAL.filter(ct => grupos[ct]);
+  const escondeOutro = filtro === 'Todas' && !q && grupos['Outro'];
+  const nOutro = escondeOutro ? grupos['Outro'].length : 0;
+  const ordem = CATEGORIAS_MATERIAL.filter(ct => grupos[ct] && !(escondeOutro && ct === 'Outro'));
   div.innerHTML = ordem.map(ct => `
     <h2 style="font-size:15px;margin:16px 0 8px;">${ct} <span class="muted" style="font-family:Inter;font-weight:400;">(${grupos[ct].length})</span></h2>
     ${grupos[ct].map(m => {
@@ -1431,7 +1433,7 @@ function filtrarEstoque(){
           <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
         </div>
       </div>`; }).join('')}
-  `).join('');
+  `).join('') + (nOutro ? `<p class="muted" style="text-align:center;margin:16px 0;">+ ${nOutro} materiais em <a href="#" onclick="event.preventDefault();state.estoqueCat='Outro';loadTab();">Outro</a> (aparecem na busca)</p>` : '');
 }
 function copiarListaCompras(){
   const comprar = (window._estoqueCache||[]).filter(m => situacaoMaterial(m) !== 'ok');
