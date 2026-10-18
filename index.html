@@ -561,7 +561,7 @@ async function uploadParaStorage(prefixoPasta, file){
 }
 
 // ===== Lista de materiais do produto (reaproveita o cadastro de Materiais/estoque) =====
-const CATEGORIAS_MATERIAL = ['Orlado','Forro','Ferragens','Metais maçônicos','Elástico','Outro'];
+const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Outro'];
 function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-'); }
 window._pmSel = window._pmSel || {};
 
