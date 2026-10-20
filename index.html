@@ -1615,8 +1615,11 @@ async function salvarEdicaoMaterial(id){
 }
 async function excluirMaterial(id){
   const { count } = await sb.from('ficha_materiais').select('id', { count: 'exact', head: true }).eq('material_id', id);
-  if(count){ alert(`Esse material está em ${count} produto(s). Tire ele dos produtos antes de excluir.`); return; }
-  if(!confirm('Excluir esse material?')) return;
+  if(count){
+    if(!confirm(`Esse material está em ${count} produto(s). Excluir mesmo assim? Ele será tirado desses produtos.`)) return;
+    const r = await sb.from('ficha_materiais').delete().eq('material_id', id);
+    if(r.error){ alert(r.error.message); return; }
+  } else if(!confirm('Excluir esse material?')) return;
   const { error } = await sb.from('materiais').delete().eq('id', id);
   if(error){ alert(error.message); return; }
   closeModal(); loadTab();
