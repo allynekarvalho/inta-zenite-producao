@@ -1662,6 +1662,7 @@ async function selecionarFichaCalc(fichaId, nome){
     <label>Quantidade a produzir</label>
     <input id="calc-qtd" type="number" value="1" min="1" oninput="atualizarCalcTotais('${fichaId}')">
     <div id="calc-totais" style="margin-top:10px;"></div>
+    <button class="btn block" style="margin-top:10px;" onclick="imprimirCalculo('${nome.replace(/'/g,"\\'")}')">🖨️ Imprimir resumo</button>
     <button class="btn ghost block" style="margin-top:10px;" onclick="copiarCalculo('${nome.replace(/'/g,"\\'")}')">Copiar lista (WhatsApp)</button>
   `;
   div.dataset.materiais = JSON.stringify(materiais||[]);
@@ -1695,6 +1696,25 @@ function atualizarCalcTotais(){
     </div>`;
   }).join('') || '<p class="muted">Sem materiais cadastrados pra essa ficha.</p>';
   if(materiais.length) totaisDiv.innerHTML += `<div class="card" style="margin-top:10px;display:flex;justify-content:space-between;"><strong>💰 Custo de material (${qtd} un.)</strong><strong>${money(window._calcCusto)}</strong></div>`;
+}
+function imprimirCalculo(nomeFicha){
+  const qtd = Number(document.getElementById('calc-qtd').value) || 0;
+  const div = document.getElementById('calc-resultado');
+  const materiais = JSON.parse(div.dataset.materiais || '[]');
+  const esc = (t) => String(t==null?'':t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const linhas = materiais.map(m => {
+    const mat = m.materiais || {};
+    const total = Number(m.quantidade_por_unidade) * qtd;
+    const fmt = (v) => fmtQtd(v, mat.unidade);
+    const { estoque, falta } = cruzarEstoque(m, total);
+    const e = embInfo(mat);
+    const rolos = (e && total >= e.q) ? `<div class="s">≈ ${(total/e.q).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${plural(e.emb,2)}</div>` : '';
+    const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
+    return `<tr><td class="f">${mat.foto_url?`<img src="${esc(mat.foto_url)}">`:''}</td><td><b>${esc(mat.nome)}</b><div class="s">${esc(fmt(m.quantidade_por_unidade))} cada</div></td><td class="v"><b>${esc(fmt(total))}</b>${rolos}</td><td>${fmtEstoque(mat, estoque)}<div class="s">${falta>0?`<span class="falta">falta ${esc(faltaTxt)}</span>`:'ok'}</div></td></tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nomeFicha)} — ${qtd} un.</title><style>body{font-family:Arial,sans-serif;margin:20px;color:#000}h1{font-size:18px;margin:0 0 2px}p{font-size:12px;color:#555;margin:0 0 14px}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 6px;border-bottom:1px solid #ccc;text-align:left;vertical-align:middle}th{font-size:11px;text-transform:uppercase;color:#555}.f{width:46px}.f img{width:40px;height:40px;object-fit:cover;border-radius:6px}.s{font-size:11px;color:#555;margin-top:2px}.v{text-align:right;white-space:nowrap}.falta{color:#c0392b;font-weight:700}button{margin-top:16px;padding:10px 18px;font-size:14px}@media print{button{display:none}}</style></head><body><h1>${esc(nomeFicha)}</h1><p>Inta Zenite · Quantidade a produzir: <b>${qtd}</b> · ${new Date().toLocaleDateString('pt-BR')}</p><table><tr><th></th><th>Material</th><th class="v">Precisa</th><th>Estoque</th></tr>${linhas}</table><button onclick="window.print()">🖨️ Imprimir / salvar PDF</button></body></html>`;
+  const w = window.open(URL.createObjectURL(new Blob([html], {type:'text/html'})), '_blank');
+  if(!w) alert('Permita abrir janelas para imprimir.');
 }
 function copiarCalculo(nomeFicha){
   const qtd = document.getElementById('calc-qtd').value;
