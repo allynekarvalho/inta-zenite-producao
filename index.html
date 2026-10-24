@@ -1338,8 +1338,16 @@ function plural(emb, n){ return n===1 ? emb : (emb.slice(-1)==='l' ? emb.slice(0
 function fmtEstoque(m, v){
   var e = embInfo(m), base = fmtQtd(v, m.unidade);
   if(!e) return base;
-  var n = (Number(v)||0)/e.q, nTxt = n.toLocaleString('pt-BR',{maximumFractionDigits:1});
-  return nTxt+' '+plural(e.emb, n)+' <span style="font-size:12px;font-weight:400;opacity:.75;">('+base+')</span>';
+  return emTxt(v, e, m.unidade)+' <span style="font-size:12px;font-weight:400;opacity:.75;">('+base+')</span>';
+}
+// "3 rolos + 24 m" em vez de "3,3 rolos"
+function emTxt(v, e, unidade){
+  var t = Number(v)||0; if(t < 0) return fmtQtd(t, unidade);
+  var inteiros = Math.floor(t/e.q + 1e-9), resto = Math.round((t - inteiros*e.q)*100)/100;
+  var partes = [];
+  if(inteiros > 0) partes.push(inteiros+' '+plural(e.emb, inteiros));
+  if(resto > 0 || !partes.length) partes.push(fmtQtd(resto, unidade));
+  return partes.join(' + ');
 }
 function fmtQtd(v, unidade){
   const n = Number(v)||0;
@@ -1696,7 +1704,7 @@ function atualizarCalcTotais(){
     const fmt = (v) => fmtQtd(v, unidade);
     const { estoque, falta } = cruzarEstoque(m, total);
     const e = embInfo(m.materiais||{}); const cu = custoUnit(m.materiais||{}); const custo = cu!=null ? cu*total : null; window._calcCusto = (window._calcCusto||0) + (custo||0);
-    const emRolos = (e && total >= e.q) ? ` <span class="muted" style="font-size:12px;">(≈ ${(total/e.q).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${plural(e.emb,2)})</span>` : '';
+    const emRolos = (e && total >= e.q) ? ` <span class="muted" style="font-size:12px;">(${emTxt(total, e, unidade)})</span>` : '';
     const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
     return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:2px;">
       <div style="display:flex;justify-content:space-between;width:100%;">
@@ -1722,7 +1730,7 @@ function imprimirCalculo(nomeFicha){
     const fmt = (v) => fmtQtd(v, mat.unidade);
     const { estoque, falta } = cruzarEstoque(m, total);
     const e = embInfo(mat);
-    const rolos = (e && total >= e.q) ? `<div class="s">≈ ${(total/e.q).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${plural(e.emb,2)}</div>` : '';
+    const rolos = (e && total >= e.q) ? `<div class="s">${emTxt(total, e, mat.unidade)}</div>` : '';
     const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
     return `<tr><td class="f">${mat.foto_url?`<img src="${esc(mat.foto_url)}">`:''}</td><td><b>${esc(mat.nome)}</b><div class="s">${esc(fmt(m.quantidade_por_unidade))} cada</div></td><td class="v"><b>${esc(fmt(total))}</b>${rolos}</td></tr>`;
   }).join('');
