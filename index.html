@@ -1748,19 +1748,38 @@ async function selecionarFichaCalc(fichaId, nome){
     <div id="calc-totais" style="margin-top:10px;"></div>
     <div class="card" style="margin-top:12px;">
       <strong style="font-size:13px;">Para a folha da costureira</strong>
-      <label>Costureira</label><select id="calc-cost"><option value="">—</option></select>
+      <label>Costureira</label><select id="calc-cost" onchange="calcValorCost('${fichaId}')"><option value="">—</option></select>
       <div class="row" style="gap:8px;">
         <div style="flex:1"><label>Data de produção</label><input id="calc-dprod" type="date" value="${todayISO()}"></div>
         <div style="flex:1"><label>Data de entrega</label><input id="calc-dent" type="date"></div>
       </div>
       <label>Valor por peça (R$)</label><input id="calc-valor" inputmode="decimal" placeholder="0,00">
+      <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="calc-lancar" checked> Lançar na Produção da costureira ao imprimir</label>
+      <div id="calc-lancado" class="muted" style="font-size:12px;margin-top:4px;"></div>
     </div>
     <button class="btn block" style="margin-top:10px;" onclick="imprimirCalculo('${nome.replace(/'/g,"\\'")}')">🖨️ Imprimir resumo</button>
     <button class="btn ghost block" style="margin-top:10px;" onclick="copiarCalculo('${nome.replace(/'/g,"\\'")}')">Copiar lista (WhatsApp)</button>
   `;
   div.dataset.materiais = JSON.stringify(materiais||[]);
+  div.dataset.ficha = fichaId;
   atualizarCalcTotais(fichaId);
-  sb.from('costureiras').select('id,nome').eq('ativo', true).order('nome').then(({data})=>{ const sel=document.getElementById('calc-cost'); if(sel) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.nome; o.textContent=c.nome; sel.appendChild(o); }); });
+  sb.from('costureiras').select('id,nome').eq('ativo', true).order('nome').then(({data})=>{ const sel=document.getElementById('calc-cost'); if(sel) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; sel.appendChild(o); }); });
+}
+async function calcValorCost(fichaId){
+  const cid = document.getElementById('calc-cost').value, inp = document.getElementById('calc-valor');
+  if(!cid) return;
+  const { data } = await sb.from('costureira_valores').select('valor').eq('costureira_id', cid).eq('ficha_id', fichaId);
+  const v = data && data[0] && Number(data[0].valor);
+  if(v) inp.value = String(v).replace('.',',');
+}
+async function calcLancarProducao(fichaId, nomeFicha, qtd, vUn){
+  const chk = document.getElementById('calc-lancar'), sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado');
+  if(!chk || !chk.checked || !sel.value || !qtd) return;
+  const nomeC = sel.options[sel.selectedIndex].text;
+  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: 'costureiras', pessoa_id: sel.value, ficha_id: fichaId, produto: nomeFicha, quantidade: qtd, valor_unit: vUn, data: document.getElementById('calc-dprod').value || todayISO() });
+  if(error){ msg.textContent = 'Não lançou na produção: '+error.message; return; }
+  chk.checked = false;
+  msg.innerHTML = `✅ Lançado na Produção de <b>${escAttr(nomeC)}</b>: ${qtd} × ${money(vUn)} = ${money(qtd*vUn)}`;
 }
 // cruza a quantidade necessária com o estoque atual do material e calcula o que vai faltar
 function cruzarEstoque(m, total){
@@ -1798,7 +1817,9 @@ function imprimirCalculo(nomeFicha){
   const gv = (id) => (document.getElementById(id)||{}).value || '';
   const dBR = (v) => v ? v.split('-').reverse().join('/') : '____/____/______';
   const vUn = Number(String(gv('calc-valor')).replace(/\./g,'').replace(',','.')) || 0;
-  const info = `<div class="info"><div><span>Costureira</span><b>${gv('calc-cost') ? String(gv('calc-cost')).replace(/</g,'&lt;') : '______________________'}</b></div><div><span>Quantidade</span><b>${qtd} un.</b></div><div><span>Data de produção</span><b>${dBR(gv('calc-dprod'))}</b></div><div><span>Data de entrega</span><b>${dBR(gv('calc-dent'))}</b></div><div><span>Valor por peça</span><b>${vUn ? money(vUn) : 'R$ ________'}</b></div><div><span>Valor total</span><b>${vUn ? money(vUn*qtd) : 'R$ ________'}</b></div></div>`;
+  const _sc = document.getElementById('calc-cost'), nomeCost = (_sc && _sc.value) ? _sc.options[_sc.selectedIndex].text : '';
+  calcLancarProducao(div.dataset.ficha, nomeFicha, qtd, vUn);
+  const info = `<div class="info"><div><span>Costureira</span><b>${nomeCost ? nomeCost.replace(/</g,'&lt;') : '______________________'}</b></div><div><span>Quantidade</span><b>${qtd} un.</b></div><div><span>Data de produção</span><b>${dBR(gv('calc-dprod'))}</b></div><div><span>Data de entrega</span><b>${dBR(gv('calc-dent'))}</b></div><div><span>Valor por peça</span><b>${vUn ? money(vUn) : 'R$ ________'}</b></div><div><span>Valor total</span><b>${vUn ? money(vUn*qtd) : 'R$ ________'}</b></div></div>`;
   const esc = (t) => String(t==null?'':t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const linhas = materiais.map(m => {
     const mat = m.materiais || {};
