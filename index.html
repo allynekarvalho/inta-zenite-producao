@@ -136,7 +136,7 @@ function fmtDate(d){
   const [y,m,day] = d.split('-');
   return `${day}/${m}/${y}`;
 }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function money(v){ return (v==null?0:Number(v)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 
 // ---------- FOTOS DE FICHAS (produtos) ----------
@@ -1299,7 +1299,83 @@ async function abrirPessoa(id){
     </div>
     <button class="btn sm gold" style="margin-top:8px;" onclick="salvarValor('${id}','${valoresTabela}','${fk}')">Adicionar valor</button>
     <p id="ep2-msg" class="error"></p>
+
+    <h2 style="font-size:15px;margin-top:22px;">🧵 Produção</h2>
+    <p class="muted" style="font-size:12px;margin-top:-4px;">Lance o que ela fez. O total é calculado sozinho.</p>
+    <label>Produto</label>
+    <select id="pl-ficha" onchange="plPreencherValor()">
+      <option value="">Escolha...</option>
+      ${(fichas||[]).map(f=>`<option value="${f.id}">${escAttr(f.nome)}</option>`).join('')}
+    </select>
+    <div class="row" style="gap:8px;">
+      <div style="flex:1"><label>Quantidade</label><input id="pl-qtd" type="number" min="1" inputmode="numeric" oninput="plTotal()"></div>
+      <div style="flex:1"><label>Valor por peça (R$)</label><input id="pl-valor" inputmode="decimal" placeholder="0,00" oninput="plTotal()"></div>
+    </div>
+    <label>Data</label><input id="pl-data" type="date" value="${todayISO()}">
+    <div id="pl-total" class="muted" style="margin-top:8px;font-size:14px;"></div>
+    <button class="btn block gold" style="margin-top:8px;" onclick="plLancar('${id}')">+ Lançar produção</button>
+    <div id="pl-lista" style="margin-top:14px;"><p class="muted">Carregando...</p></div>
   `);
+  window._plValores = {}; (valores||[]).forEach(v=>{ window._plValores[v.ficha_id] = Number(v.valor)||0; });
+  window._plTipo = tabela;
+  plRender(id);
+}
+function plNum(v){ return Number(String(v||'').replace(/\./g,'').replace(',','.')) || 0; }
+function plPreencherValor(){
+  const f = document.getElementById('pl-ficha').value, v = (window._plValores||{})[f];
+  document.getElementById('pl-valor').value = v ? String(v).replace('.',',') : '';
+  plTotal();
+}
+function plTotal(){
+  const q = Number(document.getElementById('pl-qtd').value)||0, v = plNum(document.getElementById('pl-valor').value);
+  document.getElementById('pl-total').innerHTML = (q && v) ? `Total: <b>${money(q*v)}</b>` : '';
+}
+async function plLancar(pessoaId){
+  const sel = document.getElementById('pl-ficha');
+  const ficha_id = sel.value, quantidade = Number(document.getElementById('pl-qtd').value)||0, valor_unit = plNum(document.getElementById('pl-valor').value);
+  if(!ficha_id){ alert('Escolha o produto.'); return; }
+  if(!quantidade){ alert('Coloque a quantidade.'); return; }
+  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: window._plTipo, pessoa_id: pessoaId, ficha_id, produto: sel.options[sel.selectedIndex].text, quantidade, valor_unit, data: document.getElementById('pl-data').value || todayISO() });
+  if(error){ alert(error.message); return; }
+  document.getElementById('pl-qtd').value = ''; plTotal();
+  plRender(pessoaId);
+}
+async function plRender(pessoaId){
+  const div = document.getElementById('pl-lista'); if(!div) return;
+  const { data, error } = await sb.from('producao_lancamentos').select('*').eq('pessoa_tipo', window._plTipo).eq('pessoa_id', pessoaId).order('data', { ascending: false });
+  if(error){ div.innerHTML = `<p class="error">${error.message}</p>`; return; }
+  const itens = data||[], tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0);
+  const abertos = itens.filter(l=>!l.pago), pagos = itens.filter(l=>l.pago);
+  const linha = (l, aberto) => `<div class="item" style="flex-direction:column;align-items:stretch;gap:4px;">
+      <div style="display:flex;justify-content:space-between;gap:8px;"><span><b>${escAttr(l.produto||'')}</b><div class="muted" style="font-size:12px;">${fmtDate(l.data)} · ${l.quantidade} × ${money(l.valor_unit)}</div></span><b style="white-space:nowrap;">${money(tot(l))}</b></div>
+      ${aberto ? `<div style="display:flex;gap:8px;"><button class="btn sm" style="flex:1" onclick="plPagar(['${l.id}'],'${pessoaId}')">✓ Marcar pago</button><button class="btn sm ghost" onclick="plExcluir('${l.id}','${pessoaId}')">Excluir</button></div>` : `<div class="muted" style="font-size:12px;color:#2E8B57;">✅ Pago em ${fmtDate(l.pago_em)} <a href="#" onclick="plDesfazer('${l.id}','${pessoaId}');return false;" style="margin-left:8px;">desfazer</a></div>`}
+    </div>`;
+  const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
+  let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;"><strong>A pagar</strong><strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong></div>`;
+  h += abertos.length ? abertos.map(l=>linha(l,true)).join('') + (abertos.length>1 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
+  if(pagos.length){
+    const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
+    h += Object.keys(porMes).sort().reverse().map(m=>{ const ll=porMes[m], t=ll.reduce((s,l)=>s+tot(l),0), [y,mm]=m.split('-');
+      return `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:600;color:#2E8B57;">✅ Pagos ${mm}/${y} (${ll.length}) · ${money(t)}</summary>${ll.map(l=>linha(l,false)).join('')}</details>`; }).join('');
+  }
+  div.innerHTML = h;
+}
+async function plPagar(ids, pessoaId){
+  if(!confirm(ids.length>1 ? 'Marcar tudo como pago?' : 'Marcar como pago?')) return;
+  const { error } = await sb.from('producao_lancamentos').update({ pago: true, pago_em: todayISO() }).in('id', ids);
+  if(error){ alert(error.message); return; }
+  plRender(pessoaId);
+}
+async function plDesfazer(id, pessoaId){
+  const { error } = await sb.from('producao_lancamentos').update({ pago: false, pago_em: null }).eq('id', id);
+  if(error){ alert(error.message); return; }
+  plRender(pessoaId);
+}
+async function plExcluir(id, pessoaId){
+  if(!confirm('Excluir este lançamento?')) return;
+  const { error } = await sb.from('producao_lancamentos').delete().eq('id', id);
+  if(error){ alert(error.message); return; }
+  plRender(pessoaId);
 }
 async function salvarEdicaoPessoa(id){
   const tabela = state.pessoaTipo;
