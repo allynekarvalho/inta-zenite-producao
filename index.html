@@ -783,8 +783,15 @@ async function abrirProduto(fichaId){
 
     ${listaMateriaisHtml('epf', f.outros_aviamentos)}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoProduto('${fichaId}')">Salvar alterações</button>
+    <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirProduto('${fichaId}')">Excluir produto</button>
     <p id="epf-msg" class="error"></p>
   `);
+}
+async function excluirProduto(fichaId){
+  if(!confirm('Excluir esse produto? Ele some da lista (os pedidos antigos continuam guardados).')) return;
+  const { error } = await sb.from('fichas_tecnicas').update({ ativo: false }).eq('id', fichaId);
+  if(error){ alert(error.message); return; }
+  closeModal(); loadTab();
 }
 async function removerFotoFichaInline(fotoId, fichaId){
   await sb.from('ficha_fotos').delete().eq('id', fotoId);
