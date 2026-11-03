@@ -857,16 +857,11 @@ async function abrirNovoPedido(){
 }
 
 async function npMostrarForm(){
-  const { data: clientes } = await sb.from('clientes').select('*').order('nome');
   showModal(`
     <h2>Novo pedido <button class="close" onclick="npFecharTudo()">&times;</button></h2>
-    <label>Cliente</label>
-    <select id="np-cliente">
-      <option value="">— novo cliente —</option>
-      ${(clientes||[]).map(c=>`<option value="${c.id}" ${npFormCache?.clienteId===c.id?'selected':''}>${c.nome}</option>`).join('')}
-    </select>
-    <div id="np-novo-cliente" style="margin-top:8px; display:${npFormCache?.clienteId?'none':'block'};">
-      <label>Nome do cliente</label>
+    <input type="hidden" id="np-cliente" value="">
+    <div id="np-novo-cliente">
+      <label>Cliente</label>
       <input id="np-cliente-nome" placeholder="Nome do Irmão ou da Loja" value="${npFormCache?.clienteNome||''}">
       <label>Tipo</label>
       <select id="np-cliente-tipo">
@@ -891,9 +886,6 @@ async function npMostrarForm(){
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarNovoPedido()">Criar pedido</button>
     <p id="np-msg" class="error"></p>
   `);
-  document.getElementById('np-cliente').onchange = e => {
-    document.getElementById('np-novo-cliente').style.display = e.target.value ? 'none' : 'block';
-  };
   renderNpPecasList();
 }
 function npFecharTudo(){ npPecas = []; npFormCache = null; closeModal(); }
@@ -1034,9 +1026,13 @@ async function salvarNovoPedido(){
     const nome = document.getElementById('np-cliente-nome').value.trim();
     if(!nome){ msg.textContent = 'Informe o nome do cliente.'; return; }
     const tipo = document.getElementById('np-cliente-tipo').value;
-    const { data, error } = await sb.from('clientes').insert({ nome, tipo }).select().single();
-    if(error){ msg.textContent = error.message; return; }
-    clienteId = data.id;
+    const { data: existe } = await sb.from('clientes').select('id').ilike('nome', nome).limit(1);
+    if(existe && existe.length){ clienteId = existe[0].id; }
+    else {
+      const { data, error } = await sb.from('clientes').insert({ nome, tipo }).select().single();
+      if(error){ msg.textContent = error.message; return; }
+      clienteId = data.id;
+    }
   }
   const prazo = document.getElementById('np-prazo').value || null;
   const urgente = document.getElementById('np-urgente').checked;
