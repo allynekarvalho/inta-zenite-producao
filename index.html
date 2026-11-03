@@ -617,6 +617,9 @@ function selecionadosMateriaisHtml(prefix, cat){
       </div>
       <label style="font-size:12px;margin:2px 0 0;">Quanto usa em 1 paramento — <b>em ${m.unidade==='m'?'METROS':m.unidade==='cm'?'CENTÍMETROS':'PEÇAS'}</b></label>
       <input type="text" inputmode="decimal" placeholder="Ex: ${m.unidade==='cm'?'175':m.unidade==='m'?'1,75':'1'}" value="${qtdBruta==null?'':String(qtdBruta).replace('.',',')}" style="width:130px;" oninput="window._pmSel['${prefix}']['${id}']=this.value.trim()===''?null:(parseFloat(this.value.replace(',','.'))||0); atualizarEstoqueItem('${prefix}','${id}');">
+      ${embInfo(m) ? `<label style="font-size:12px;margin:6px 0 0;">Tamanho de cada corte (opcional) — em ${m.unidade==='cm'?'CENTÍMETROS':'METROS'}</label>
+      <input type="text" inputmode="decimal" placeholder="Ex: ${m.unidade==='cm'?'170':'1,70'}" value="${((window._pmCorte||{})[prefix]||{})[id]==null?'':String(window._pmCorte[prefix][id]).replace('.',',')}" style="width:130px;" oninput="window._pmCorte=window._pmCorte||{}; window._pmCorte['${prefix}']=window._pmCorte['${prefix}']||{}; window._pmCorte['${prefix}']['${id}']=this.value.trim()===''?null:(parseFloat(this.value.replace(',','.'))||null);">
+      <div class="muted" style="font-size:11px;">Use se cada peça leva pedaços inteiros (a sobra do ${embInfo(m).emb} não é emendada).</div>` : ''}
       <div class="muted" id="${prefix}-estoque-${id}" style="font-size:12px;">${qtdBruta==null ? 'Informe a medida pra ver o que falta no estoque.' : `Em estoque: ${fmtEstoque(m, estoque)}${falta>0?` — <span style="color:#c0392b;font-weight:600;">falta ${fmt(falta)}</span>`:' — ok pra essa quantidade'}`}</div>
     </div>`;
   }).join('');
@@ -700,14 +703,14 @@ async function salvarListaMateriais(prefix, fichaId){
   await sb.from('ficha_materiais').delete().eq('ficha_id', fichaId);
   const sel = window._pmSel[prefix] || {};
   const linhas = Object.keys(sel).map((materialId, i) => ({
-    ficha_id: fichaId, material_id: materialId, quantidade_por_unidade: sel[materialId], ordem: i,
+    ficha_id: fichaId, material_id: materialId, quantidade_por_unidade: sel[materialId], ordem: i, corte: ((window._pmCorte||{})[prefix]||{})[materialId] || null,
   }));
   if(linhas.length) await sb.from('ficha_materiais').insert(linhas);
 }
 
 async function novoProdutoCompleto(){
   await carregarMateriaisCategorias();
-  window._pmSel['npf'] = {};
+  window._pmSel['npf'] = {}; window._pmCorte = window._pmCorte || {}; window._pmCorte['npf'] = {};
   const potNome = (window._prodPotencias||[]).find(p=>p.id===state.produtos.potenciaId)?.nome || '';
   const tipoNome = (window._prodTipos||[]).find(t=>t.id===state.produtos.tipoId)?.nome || '';
   const ritoNome = (window._prodRitos||[]).find(r=>r.id===state.produtos.ritoId)?.nome || '';
@@ -757,9 +760,9 @@ async function salvarProdutoCompleto(){
 async function abrirProduto(fichaId){
   await carregarMateriaisCategorias();
   const { data: f } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(*)').eq('id', fichaId).single();
-  const { data: fm } = await sb.from('ficha_materiais').select('material_id,quantidade_por_unidade').eq('ficha_id', fichaId);
-  window._pmSel['epf'] = {};
-  (fm||[]).forEach(r => { window._pmSel['epf'][r.material_id] = r.quantidade_por_unidade; });
+  const { data: fm } = await sb.from('ficha_materiais').select('material_id,quantidade_por_unidade,corte').eq('ficha_id', fichaId);
+  window._pmSel['epf'] = {}; window._pmCorte = window._pmCorte || {}; window._pmCorte['epf'] = {};
+  (fm||[]).forEach(r => { window._pmSel['epf'][r.material_id] = r.quantidade_por_unidade; if(r.corte) window._pmCorte['epf'][r.material_id] = Number(r.corte); });
   const fotos = (f.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
   showModal(`
     <h2>${f.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
@@ -1404,6 +1407,14 @@ async function salvarValor(id, valoresTabela, fk){
 
 // ================= ESTOQUE (materiais) =================
 function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+// rolos inteiros quando cada peça usa cortes de tamanho fixo (sobra do rolo não é emendada)
+function calcCortes(fm, qtd){
+  const m = fm.materiais || {}, e = embInfo(m), corte = Number(fm.corte)||0, q = Number(fm.quantidade_por_unidade)||0;
+  if(!e || !(corte > 0) || !(q > 0)) return null;
+  const porRolo = Math.floor(e.q/corte + 1e-9); if(porRolo < 1) return null;
+  const cortesPorUn = Math.ceil(q/corte - 1e-9), cortes = cortesPorUn*qtd, rolos = Math.ceil(cortes/porRolo);
+  return { e, corte, porRolo, cortesPorUn, cortes, rolos, sobra: +(e.q - porRolo*corte).toFixed(2) };
+}
 function custoUnit(m){ const pr=Number(m&&m.preco)||0; if(!(pr>0)) return null; const e=embInfo(m); return e ? pr/e.q : pr; }
 function custoProdutoHtml(prefix){
   const sel = window._pmSel[prefix] || {}; let tot = 0, semPreco = [];
@@ -1800,10 +1811,16 @@ function atualizarCalcTotais(){
     const total = Number(m.quantidade_por_unidade) * qtd;
     const unidade = m.materiais?.unidade;
     const fmt = (v) => fmtQtd(v, unidade);
-    const { estoque, falta } = cruzarEstoque(m, total);
-    const e = embInfo(m.materiais||{}); const cu = custoUnit(m.materiais||{}); const custo = cu!=null ? cu*total : null; window._calcCusto = (window._calcCusto||0) + (custo||0);
-    const emRolos = (e && total >= e.q) ? ` <span class="muted" style="font-size:12px;">(${emTxt(total, e, unidade)})</span>` : '';
-    const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
+    let { estoque, falta } = cruzarEstoque(m, total);
+    const e = embInfo(m.materiais||{}); const cu = custoUnit(m.materiais||{}); const cc = calcCortes(m, qtd);
+    const custo = cu!=null ? cu*(cc ? cc.rolos*cc.e.q : total) : null; window._calcCusto = (window._calcCusto||0) + (custo||0);
+    let emRolos = (e && total >= e.q) ? ` <span class="muted" style="font-size:12px;">(${emTxt(total, e, unidade)})</span>` : '';
+    let faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
+    if(cc){
+      emRolos = `<div style="font-size:13px;font-weight:700;">= ${cc.rolos} ${plural(cc.e.emb, cc.rolos)} inteiros</div><div class="muted" style="font-size:11px;">${cc.cortes} cortes de ${fmt(cc.corte)} · ${cc.porRolo} por ${cc.e.emb}${cc.sobra>0?` · sobra ${fmt(cc.sobra)} por ${cc.e.emb}`:''}</div>`;
+      const inteirosEst = Math.floor(estoque/cc.e.q + 1e-9), faltaR = cc.rolos - inteirosEst;
+      falta = faltaR > 0 ? faltaR : 0; faltaTxt = `${faltaR} ${plural(cc.e.emb, faltaR)}`;
+    }
     return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:2px;">
       <div style="display:flex;justify-content:space-between;width:100%;">
         <span style="display:flex;gap:8px;align-items:center;">${m.materiais?.foto_url?`<img src="${m.materiais.foto_url}" class="foto-thumb" style="width:40px;height:40px;">`:`<span class="foto-thumb" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;">📦</span>`}<span>${m.materiais?.nome} <span class="muted" style="font-size:11px;">(${fmt(m.quantidade_por_unidade)} cada)</span></span></span><span style="text-align:right;"><b>${fmt(total)}</b>${emRolos}${custo!=null?`<div style="font-size:12px;">${money(custo)}</div>`:''}</span>
@@ -1830,7 +1847,8 @@ function imprimirCalculo(nomeFicha){
     const fmt = (v) => fmtQtd(v, mat.unidade);
     const { estoque, falta } = cruzarEstoque(m, total);
     const e = embInfo(mat);
-    const rolos = (e && total >= e.q) ? `<div class="s">${emTxt(total, e, mat.unidade)}</div>` : '';
+    const cc = calcCortes(m, qtd);
+    const rolos = cc ? `<div class="s"><b>${cc.rolos} ${plural(cc.e.emb, cc.rolos)} inteiros</b></div><div class="s">${cc.cortes} cortes de ${esc(fmt(cc.corte))}</div>` : ((e && total >= e.q) ? `<div class="s">${emTxt(total, e, mat.unidade)}</div>` : '');
     const faltaTxt = e ? `${Math.ceil(falta/e.q)} ${plural(e.emb, Math.ceil(falta/e.q))}` : fmt(falta);
     return `<tr><td class="f">${mat.foto_url?`<img src="${esc(mat.foto_url)}">`:''}</td><td><b>${esc(mat.nome)}</b><div class="s">${esc(fmt(m.quantidade_por_unidade))} cada</div></td><td class="v"><b>${esc(fmt(total))}</b>${rolos}</td></tr>`;
   }).join('');
