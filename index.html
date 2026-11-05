@@ -1352,9 +1352,10 @@ async function plRender(pessoaId){
   if(error){ div.innerHTML = `<p class="error">${error.message}</p>`; return; }
   const itens = data||[], tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0);
   const abertos = itens.filter(l=>!l.pago), pagos = itens.filter(l=>l.pago);
-  const linha = (l, aberto) => `<div class="item" style="flex-direction:column;align-items:stretch;gap:4px;">
+  window._plItens = {}; itens.forEach(l => { window._plItens[l.id] = l; });
+  const linha = (l, aberto) => `<div class="item" id="pl-it-${l.id}" style="flex-direction:column;align-items:stretch;gap:4px;">
       <div style="display:flex;justify-content:space-between;gap:8px;"><span><b>${escAttr(l.produto||'')}</b><div class="muted" style="font-size:12px;">${fmtDate(l.data)} · ${l.quantidade} × ${money(l.valor_unit)}</div></span><b style="white-space:nowrap;">${money(tot(l))}</b></div>
-      ${aberto ? `<div style="display:flex;gap:8px;"><button class="btn sm" style="flex:1" onclick="plPagar(['${l.id}'],'${pessoaId}')">✓ Marcar pago</button><button class="btn sm ghost" onclick="plExcluir('${l.id}','${pessoaId}')">Excluir</button></div>` : `<div class="muted" style="font-size:12px;color:#2E8B57;">✅ Pago em ${fmtDate(l.pago_em)} <a href="#" onclick="plDesfazer('${l.id}','${pessoaId}');return false;" style="margin-left:8px;">desfazer</a></div>`}
+      ${aberto ? `<div style="display:flex;gap:8px;"><button class="btn sm" style="flex:1" onclick="plPagar(['${l.id}'],'${pessoaId}')">✓ Marcar pago</button><button class="btn sm ghost" onclick="plEditar('${l.id}','${pessoaId}')">Editar</button><button class="btn sm ghost" onclick="plExcluir('${l.id}','${pessoaId}')">Excluir</button></div>` : `<div class="muted" style="font-size:12px;color:#2E8B57;">✅ Pago em ${fmtDate(l.pago_em)} <a href="#" onclick="plDesfazer('${l.id}','${pessoaId}');return false;" style="margin-left:8px;">desfazer</a></div>`}
     </div>`;
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
   let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;"><strong>A pagar</strong><strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong></div>`;
@@ -1365,6 +1366,23 @@ async function plRender(pessoaId){
       return `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:600;color:#2E8B57;">✅ Pagos ${mm}/${y} (${ll.length}) · ${money(t)}</summary>${ll.map(l=>linha(l,false)).join('')}</details>`; }).join('');
   }
   div.innerHTML = h;
+}
+function plEditar(id, pessoaId){
+  const l = (window._plItens||{})[id], el = document.getElementById('pl-it-'+id); if(!l || !el) return;
+  el.innerHTML = `<b>${escAttr(l.produto||'')}</b>
+    <div class="row" style="gap:8px;">
+      <div style="flex:1"><label>Quantidade</label><input id="pl-e-qtd-${id}" type="number" min="1" inputmode="numeric" value="${l.quantidade}"></div>
+      <div style="flex:1"><label>Valor por peça (R$)</label><input id="pl-e-val-${id}" inputmode="decimal" value="${String(l.valor_unit).replace('.',',')}"></div>
+    </div>
+    <label>Data</label><input id="pl-e-data-${id}" type="date" value="${l.data||''}">
+    <div style="display:flex;gap:8px;margin-top:8px;"><button class="btn sm gold" style="flex:1" onclick="plSalvarEdicao('${id}','${pessoaId}')">Salvar</button><button class="btn sm ghost" onclick="plRender('${pessoaId}')">Cancelar</button></div>`;
+}
+async function plSalvarEdicao(id, pessoaId){
+  const quantidade = Number(document.getElementById('pl-e-qtd-'+id).value)||0, valor_unit = plNum(document.getElementById('pl-e-val-'+id).value), data = document.getElementById('pl-e-data-'+id).value || todayISO();
+  if(!quantidade){ alert('Coloque a quantidade.'); return; }
+  const { error } = await sb.from('producao_lancamentos').update({ quantidade, valor_unit, data }).eq('id', id);
+  if(error){ alert(error.message); return; }
+  plRender(pessoaId);
 }
 async function plPagar(ids, pessoaId){
   if(!confirm(ids.length>1 ? 'Marcar tudo como pago?' : 'Marcar como pago?')) return;
