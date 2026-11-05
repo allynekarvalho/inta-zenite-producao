@@ -1360,7 +1360,7 @@ async function plRender(pessoaId){
     </div>`;
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
   let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;"><strong>A pagar</strong><strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong></div>`;
-  if(abertos.length) h += `<button class="btn block ghost" style="margin:8px 0;" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button>`;
+  if(abertos.length) h += `<div style="display:flex;gap:8px;margin:8px 0;"><button class="btn ghost" style="flex:1" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button><button class="btn ghost" onclick="plWhats('${pessoaId}', true)">🇪🇸 Español</button></div>`;
   h += abertos.length ? abertos.map(l=>linha(l,true)).join('') + (abertos.length>1 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
   if(pagos.length){
     const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
@@ -1369,7 +1369,7 @@ async function plRender(pessoaId){
   }
   div.innerHTML = h;
 }
-function plImagem(){
+function plImagem(es){
   const p = window._plPessoa || {}, itens = Object.values(window._plItens||{}).filter(l=>!l.pago).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
   const tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0), total = itens.reduce((s,l)=>s+tot(l),0);
   const dBR = (d) => d ? d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4) : '';
@@ -1379,9 +1379,9 @@ function plImagem(){
   const fit = (t, f, max) => { x.font = f; if(x.measureText(t).width <= max) return t; while(t.length && x.measureText(t+'…').width > max) t = t.slice(0,-1); return t+'…'; };
   x.fillStyle = '#16181f'; x.fillRect(0,0,W,H);
   x.fillStyle = '#c4a574'; x.fillRect(0,0,W,6);
-  x.fillStyle = '#c4a574'; x.font = '600 18px '+sans; x.fillText('ZÊNITE · PRODUÇÃO', PAD, 64);
+  x.fillStyle = '#c4a574'; x.font = '600 18px '+sans; x.fillText(es ? 'ZÊNITE · PRODUCCIÓN' : 'ZÊNITE · PRODUÇÃO', PAD, 64);
   x.fillStyle = '#ffffff'; x.font = '700 40px '+ser; x.fillText(fit(p.nome||'', '700 40px '+ser, W-2*PAD), PAD, 120);
-  x.fillStyle = '#8b90a0'; x.font = '18px '+sans; x.fillText('Relatório de produção a pagar · '+new Date().toLocaleDateString('pt-BR'), PAD, 156);
+  x.fillStyle = '#8b90a0'; x.font = '18px '+sans; x.fillText((es ? 'Informe de producción a pagar · ' : 'Relatório de produção a pagar · ')+new Date().toLocaleDateString('pt-BR'), PAD, 156);
   x.fillStyle = '#c4a574'; x.fillRect(PAD, 186, 60, 3);
   x.strokeStyle = '#2e3242'; x.lineWidth = 1;
   itens.forEach((l,i) => {
@@ -1397,8 +1397,8 @@ function plImagem(){
   x.fillStyle = '#b03a2e'; x.font = '700 34px '+sans; x.textAlign = 'right'; x.fillText(money(total), W-PAD-28, yt+55); x.textAlign = 'left';
   return c;
 }
-function plWhats(pessoaId){
-  const p = window._plPessoa || {}, c = plImagem();
+function plWhats(pessoaId, es){
+  const p = window._plPessoa || {}, c = plImagem(es);
   const url = c.toDataURL('image/png'), bin = atob(url.split(',')[1]), arr = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
   const nomeArq = 'producao-'+String(p.nome||'costureira').toLowerCase().replace(/[^a-z0-9]+/g,'-')+'.png';
