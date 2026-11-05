@@ -1349,6 +1349,7 @@ async function plLancar(pessoaId){
 async function plRender(pessoaId){
   const div = document.getElementById('pl-lista'); if(!div) return;
   const { data, error } = await sb.from('producao_lancamentos').select('*').eq('pessoa_tipo', window._plTipo).eq('pessoa_id', pessoaId).order('data', { ascending: false });
+  if(!window._plPessoa || window._plPessoa.id !== pessoaId){ const { data: pp } = await sb.from(window._plTipo).select('id,nome,telefone').eq('id', pessoaId).single(); window._plPessoa = pp || { id: pessoaId }; }
   if(error){ div.innerHTML = `<p class="error">${error.message}</p>`; return; }
   const itens = data||[], tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0);
   const abertos = itens.filter(l=>!l.pago), pagos = itens.filter(l=>l.pago);
@@ -1359,7 +1360,7 @@ async function plRender(pessoaId){
     </div>`;
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
   let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;"><strong>A pagar</strong><strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong></div>`;
-  if(abertos.length) h += `<button class="btn block ghost" style="margin:8px 0;" onclick="plWhats('${pessoaId}')">📲 Enviar relatório por WhatsApp</button>`;
+  if(abertos.length) h += `<button class="btn block ghost" style="margin:8px 0;" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button>`;
   h += abertos.length ? abertos.map(l=>linha(l,true)).join('') + (abertos.length>1 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
   if(pagos.length){
     const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
@@ -1368,16 +1369,48 @@ async function plRender(pessoaId){
   }
   div.innerHTML = h;
 }
-async function plWhats(pessoaId){
-  const { data: p } = await sb.from(window._plTipo).select('nome,telefone').eq('id', pessoaId).single();
-  const abertos = Object.values(window._plItens||{}).filter(l=>!l.pago).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
-  const tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0);
-  const dBR = (d) => d ? d.slice(8,10)+'/'+d.slice(5,7) : '';
-  let txt = `*Zênite — Produção de ${(p&&p.nome)||''}*\n\n`;
-  abertos.forEach(l => { txt += `${dBR(l.data)} · ${l.produto||''}\n${l.quantidade} × ${money(l.valor_unit)} = *${money(tot(l))}*\n\n`; });
-  txt += `*Total a pagar: ${money(abertos.reduce((s,l)=>s+tot(l),0))}*`;
-  let tel = String((p&&p.telefone)||'').replace(/\D/g,''); if(tel && tel.length <= 11) tel = '55'+tel;
-  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`, '_blank');
+function plImagem(){
+  const p = window._plPessoa || {}, itens = Object.values(window._plItens||{}).filter(l=>!l.pago).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0), total = itens.reduce((s,l)=>s+tot(l),0);
+  const dBR = (d) => d ? d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4) : '';
+  const S = 2, W = 720, PAD = 44, ROW = 96, top = 250, H = top + itens.length*ROW + 170;
+  const c = document.createElement('canvas'); c.width = W*S; c.height = H*S; const x = c.getContext('2d'); x.scale(S,S);
+  const ser = 'Georgia, "Times New Roman", serif', sans = '-apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+  const fit = (t, f, max) => { x.font = f; if(x.measureText(t).width <= max) return t; while(t.length && x.measureText(t+'…').width > max) t = t.slice(0,-1); return t+'…'; };
+  x.fillStyle = '#16181f'; x.fillRect(0,0,W,H);
+  x.fillStyle = '#c4a574'; x.fillRect(0,0,W,6);
+  x.fillStyle = '#c4a574'; x.font = '600 18px '+sans; x.fillText('ZÊNITE · PRODUÇÃO', PAD, 64);
+  x.fillStyle = '#ffffff'; x.font = '700 40px '+ser; x.fillText(fit(p.nome||'', '700 40px '+ser, W-2*PAD), PAD, 120);
+  x.fillStyle = '#8b90a0'; x.font = '18px '+sans; x.fillText('Relatório de produção a pagar · '+new Date().toLocaleDateString('pt-BR'), PAD, 156);
+  x.fillStyle = '#c4a574'; x.fillRect(PAD, 186, 60, 3);
+  x.strokeStyle = '#2e3242'; x.lineWidth = 1;
+  itens.forEach((l,i) => {
+    const y = top + i*ROW;
+    x.fillStyle = '#ffffff'; x.font = '600 24px '+sans; x.fillText(fit(l.produto||'', '600 24px '+sans, W-2*PAD-190), PAD, y);
+    x.fillStyle = '#8b90a0'; x.font = '19px '+sans; x.fillText(dBR(l.data)+'  ·  '+l.quantidade+' × '+money(l.valor_unit), PAD, y+32);
+    x.fillStyle = '#ffffff'; x.font = '700 26px '+sans; x.textAlign = 'right'; x.fillText(money(tot(l)), W-PAD, y+6); x.textAlign = 'left';
+    x.beginPath(); x.moveTo(PAD, y+60); x.lineTo(W-PAD, y+60); x.stroke();
+  });
+  const yt = top + itens.length*ROW + 10;
+  x.fillStyle = '#ffffff'; x.beginPath(); x.roundRect(PAD, yt, W-2*PAD, 84, 16); x.fill();
+  x.fillStyle = '#16181f'; x.font = '700 24px '+sans; x.fillText('TOTAL A PAGAR', PAD+28, yt+52);
+  x.fillStyle = '#b03a2e'; x.font = '700 34px '+sans; x.textAlign = 'right'; x.fillText(money(total), W-PAD-28, yt+55); x.textAlign = 'left';
+  return c;
+}
+function plWhats(pessoaId){
+  const p = window._plPessoa || {}, c = plImagem();
+  const url = c.toDataURL('image/png'), bin = atob(url.split(',')[1]), arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  const nomeArq = 'producao-'+String(p.nome||'costureira').toLowerCase().replace(/[^a-z0-9]+/g,'-')+'.png';
+  const file = new File([arr], nomeArq, { type: 'image/png' });
+  if(navigator.canShare && navigator.canShare({ files: [file] })){
+    navigator.share({ files: [file] }).catch(()=>{});
+    return;
+  }
+  const a = document.createElement('a'); a.href = url; a.download = nomeArq; document.body.appendChild(a); a.click(); a.remove();
+  let tel = String(p.telefone||'').replace(/\D/g,''); if(tel && tel.length <= 11) tel = '55'+tel;
+  setTimeout(()=>window.open(`https://wa.me/${tel}`, '_blank'), 400);
+  alert('A imagem foi baixada. No WhatsApp, anexe a imagem para ela.');
 }
 function plEditar(id, pessoaId){
   const l = (window._plItens||{})[id], el = document.getElementById('pl-it-'+id); if(!l || !el) return;
