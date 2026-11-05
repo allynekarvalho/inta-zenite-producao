@@ -1359,6 +1359,7 @@ async function plRender(pessoaId){
     </div>`;
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
   let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;"><strong>A pagar</strong><strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong></div>`;
+  if(abertos.length) h += `<button class="btn block ghost" style="margin:8px 0;" onclick="plWhats('${pessoaId}')">📲 Enviar relatório por WhatsApp</button>`;
   h += abertos.length ? abertos.map(l=>linha(l,true)).join('') + (abertos.length>1 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
   if(pagos.length){
     const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
@@ -1366,6 +1367,17 @@ async function plRender(pessoaId){
       return `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:600;color:#2E8B57;">✅ Pagos ${mm}/${y} (${ll.length}) · ${money(t)}</summary>${ll.map(l=>linha(l,false)).join('')}</details>`; }).join('');
   }
   div.innerHTML = h;
+}
+async function plWhats(pessoaId){
+  const { data: p } = await sb.from(window._plTipo).select('nome,telefone').eq('id', pessoaId).single();
+  const abertos = Object.values(window._plItens||{}).filter(l=>!l.pago).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0);
+  const dBR = (d) => d ? d.slice(8,10)+'/'+d.slice(5,7) : '';
+  let txt = `*Zênite — Produção de ${(p&&p.nome)||''}*\n\n`;
+  abertos.forEach(l => { txt += `${dBR(l.data)} · ${l.produto||''}\n${l.quantidade} × ${money(l.valor_unit)} = *${money(tot(l))}*\n\n`; });
+  txt += `*Total a pagar: ${money(abertos.reduce((s,l)=>s+tot(l),0))}*`;
+  let tel = String((p&&p.telefone)||'').replace(/\D/g,''); if(tel && tel.length <= 11) tel = '55'+tel;
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`, '_blank');
 }
 function plEditar(id, pessoaId){
   const l = (window._plItens||{})[id], el = document.getElementById('pl-it-'+id); if(!l || !el) return;
