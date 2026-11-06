@@ -1294,7 +1294,7 @@ async function abrirPessoa(id){
         <div class="item" style="gap:8px;">
           <span style="flex:1">${v.fichas_tecnicas?.nome}</span>
           <span style="white-space:nowrap">${money(v.valor)}</span>
-          <button class="btn sm ghost" onclick="editarValor('${v.id}','${id}','${valoresTabela}',${Number(v.valor)||0})">Editar</button>
+          <button class="btn sm ghost" onclick="editarValor('${v.id}','${id}','${valoresTabela}',${Number(v.valor)||0},'${v.ficha_id}')">Editar</button>
           <button class="btn sm ghost" style="color:var(--danger);" onclick="excluirValor('${v.id}','${id}','${valoresTabela}')">✕</button>
         </div>`).join('') || '<p class="muted">Nenhum valor definido ainda.</p>'}
     </div>
@@ -1467,16 +1467,23 @@ async function salvarValor(id, valoresTabela, fk){
   const payload = { ficha_id, valor }; payload[fk] = id;
   const { error } = await sb.from(valoresTabela).upsert(payload, { onConflict: `${fk},ficha_id` });
   if(error){ msg.textContent = error.message; return; }
+  await plAtualizarAbertos(id, ficha_id, valor);
   closeModal(); abrirPessoa(id);
 }
 
-async function editarValor(valorId, pessoaId, valoresTabela, atual){
+// atualiza os lançamentos ainda não pagos desse produto para o valor novo
+async function plAtualizarAbertos(pessoaId, fichaId, valor){
+  const tipo = window._plTipo || (state.pessoaTipo === 'faccionistas' ? 'faccionistas' : 'costureiras');
+  await sb.from('producao_lancamentos').update({ valor_unit: valor }).eq('pessoa_tipo', tipo).eq('pessoa_id', pessoaId).eq('ficha_id', fichaId).eq('pago', false);
+}
+async function editarValor(valorId, pessoaId, valoresTabela, atual, fichaId){
   const r = prompt('Novo valor por peça (R$):', String(atual).replace('.',','));
   if(r == null) return;
   const valor = Number(String(r).replace(/\./g,'').replace(',','.'));
   if(!(valor > 0)){ alert('Valor inválido.'); return; }
   const { error } = await sb.from(valoresTabela).update({ valor }).eq('id', valorId);
   if(error){ alert(error.message); return; }
+  if(fichaId) await plAtualizarAbertos(pessoaId, fichaId, valor);
   closeModal(); abrirPessoa(pessoaId);
 }
 async function excluirValor(valorId, pessoaId, valoresTabela){
