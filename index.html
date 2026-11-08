@@ -764,6 +764,11 @@ async function abrirProduto(fichaId){
   window._pmSel['epf'] = {}; window._pmCorte = window._pmCorte || {}; window._pmCorte['epf'] = {};
   (fm||[]).forEach(r => { window._pmSel['epf'][r.material_id] = r.quantidade_por_unidade; if(r.corte) window._pmCorte['epf'][r.material_id] = Number(r.corte); });
   const fotos = (f.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
+  const [{ data: bdi }, { data: bds }] = await Promise.all([
+    sb.from('fichas_tecnicas').select('id,nome').like('nome', 'Bordado · %').eq('ativo', true).order('nome'),
+    sb.from('ficha_bordados').select('bordado_id,quantidade').eq('ficha_id', fichaId)
+  ]);
+  window._bdItens = bdi||[]; window._bdSel = {}; (bds||[]).forEach(r => { window._bdSel[r.bordado_id] = r.quantidade; });
   showModal(`
     <h2>${f.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     <label>Nome do produto</label>
@@ -785,6 +790,11 @@ async function abrirProduto(fichaId){
     </div>
 
     ${listaMateriaisHtml('epf', f.outros_aviamentos)}
+    ${/^Bordado/.test(f.nome||'') ? '' : `<label>🪡 Bordados desta peça</label>
+    <div class="muted" style="font-size:12px;margin-top:-2px;">Quantos bordados de cada parte essa peça leva (0 = não leva).</div>
+    <div class="card" style="padding:6px 12px;">${(window._bdItens||[]).map(b=>`
+      <div class="item" style="gap:8px;"><span style="flex:1">${escAttr(b.nome.replace('Bordado · ',''))}</span>
+      <input type="number" min="0" class="epf-bord" data-b="${b.id}" value="${(window._bdSel||{})[b.id]||0}" style="width:70px;text-align:center;"></div>`).join('') || '<p class="muted">Nenhum bordado cadastrado.</p>'}</div>`}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoProduto('${fichaId}')">Salvar alterações</button>
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirProduto('${fichaId}')">Excluir produto</button>
     <p id="epf-msg" class="error"></p>
@@ -814,6 +824,12 @@ async function salvarEdicaoProduto(fichaId){
   const { error } = await sb.from('fichas_tecnicas').update(patch).eq('id', fichaId);
   if(error){ msg.textContent = error.message; return; }
   await salvarListaMateriais('epf', fichaId);
+  for(const inp of document.querySelectorAll('.epf-bord')){
+    const q = Number(inp.value)||0, b = inp.dataset.b, antes = (window._bdSel||{})[b]||0;
+    if(q === antes) continue;
+    if(q > 0) await sb.from('ficha_bordados').upsert({ ficha_id: fichaId, bordado_id: b, quantidade: q }, { onConflict: 'ficha_id,bordado_id' });
+    else await sb.from('ficha_bordados').delete().eq('ficha_id', fichaId).eq('bordado_id', b);
+  }
   const fotoInput = document.getElementById('epf-foto');
   const file = fotoInput?.files[0];
   if(file){
@@ -1079,9 +1095,24 @@ async function abrirPedido(id){
       `).join('') || '<p class="muted">Nenhuma peça ainda.</p>'}
     </div>
     <button class="btn block" style="margin-top:14px;" onclick="adicionarPeca('${id}')">+ Adicionar peça</button>
-    <details style="margin-top:16px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🧵 Materiais deste pedido</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
+    <details style="margin-top:16px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🪡 Bordados deste pedido</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🧵 Materiais deste pedido</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
   `);
   materiaisDoPedido(pecas||[]);
+  bordadosDoPedido(pecas||[]);
+}
+// soma os bordados (por parte) das peças do pedido
+async function bordadosDoPedido(pecas){
+  const div = document.getElementById('pedido-bordados'); if(!div) return;
+  const ids = [...new Set(pecas.map(p=>p.ficha_id).filter(Boolean))];
+  if(!ids.length){ div.textContent = 'Nenhuma peça ainda.'; return; }
+  const { data: fb } = await sb.from('ficha_bordados').select('ficha_id, quantidade, bordado:fichas_tecnicas!ficha_bordados_bordado_id_fkey(nome)').in('ficha_id', ids);
+  const tot = {};
+  pecas.forEach(p => (fb||[]).filter(r=>r.ficha_id===p.ficha_id).forEach(r => {
+    const n = (r.bordado&&r.bordado.nome||'').replace('Bordado · ',''); tot[n] = (tot[n]||0) + (Number(r.quantidade)||0)*(Number(p.quantidade)||0);
+  }));
+  const ls = Object.entries(tot).filter(x=>x[1]>0);
+  div.innerHTML = ls.length ? ls.map(([n,q]) => `<div class="item"><span style="color:var(--ink);">${escAttr(n)}</span><strong style="color:var(--ink);">${q}</strong></div>`).join('') : 'As peças deste pedido não têm bordado cadastrado.';
 }
 async function materiaisDoPedido(pecas){
   const div = document.getElementById('pedido-materiais'); if(!div) return;
@@ -1977,6 +2008,8 @@ function calcSelecionarFicha(id){
   if(f) selecionarFichaCalc(f.id, f.nome);
 }
 async function selecionarFichaCalc(fichaId, nome){
+  sb.from('ficha_bordados').select('quantidade, bordado:fichas_tecnicas!ficha_bordados_bordado_id_fkey(nome)').eq('ficha_id', fichaId).then(({data}) => { window._calcBordados = data||[]; if(document.getElementById('calc-qtd')) atualizarCalcTotais(); });
+  window._calcBordados = [];
   const { data: materiais } = await sb.from('ficha_materiais').select('*, materiais(*)').eq('ficha_id', fichaId).order('ordem');
   const div = document.getElementById('calc-resultado');
   div.innerHTML = `
@@ -2058,6 +2091,8 @@ function atualizarCalcTotais(){
     </div>`;
   }).join('') || '<p class="muted">Sem materiais cadastrados pra essa ficha.</p>';
   if(materiais.length) totaisDiv.innerHTML += `<div class="card" style="margin-top:10px;display:flex;justify-content:space-between;"><strong>💰 Custo de material (${qtd} un.)</strong><strong>${money(window._calcCusto)}</strong></div>`;
+  const bds = (window._calcBordados||[]).filter(b => Number(b.quantidade) > 0);
+  if(bds.length) totaisDiv.innerHTML += `<div class="card" style="margin-top:10px;"><strong>🪡 Bordados (${qtd} un.)</strong>${bds.map(b => `<div class="item"><span>${escAttr((b.bordado&&b.bordado.nome||'').replace('Bordado · ',''))}</span><strong>${(Number(b.quantidade)||0)*qtd}</strong></div>`).join('')}</div>`;
 }
 function imprimirCalculo(nomeFicha){
   const qtd = Number(document.getElementById('calc-qtd').value) || 0;
