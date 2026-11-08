@@ -1439,6 +1439,17 @@ async function plLancarSalario(pessoaId){
   if(error){ alert(error.message); return; }
   plRender(pessoaId);
 }
+// agrupa por mês com cabeçalho "Peças produzidas em outubro/2026"
+const PL_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+function plPorMes(itens, linhaFn){
+  const g = {}; itens.forEach(l => { const m = (l.data||'').slice(0,7); (g[m]=g[m]||[]).push(l); });
+  return Object.keys(g).sort().map(m => {
+    const [y, mm] = m.split('-'), t = g[m].reduce((s,l)=>s+(Number(l.quantidade)||0)*(Number(l.valor_unit)||0),0);
+    return `<div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 2px;padding-bottom:4px;border-bottom:1px solid var(--line, #2e3242);">
+      <strong style="font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--gold, #c4a574);">Produção de ${PL_MESES[Number(mm)-1]||''}/${y||''}</strong>
+      <span class="muted" style="font-size:13px;">${money(t)}</span></div>` + g[m].map(linhaFn).join('');
+  }).join('');
+}
 function plNum(v){ return Number(String(v||'').replace(/\./g,'').replace(',','.')) || 0; }
 function plPreencherValor(){
   const f = document.getElementById('pl-ficha').value, v = (window._plValores||{})[f];
@@ -1474,7 +1485,7 @@ async function plRender(pessoaId){
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
   let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;"><strong>A pagar</strong><strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong></div>`;
   if(abertos.length) h += `<div style="display:flex;gap:8px;margin:8px 0;"><button class="btn ghost" style="flex:1" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button><button class="btn ghost" onclick="plWhats('${pessoaId}', true)">🇪🇸 Español</button></div>`;
-  h += abertos.length ? abertos.map(l=>linha(l,true)).join('') + (abertos.length>1 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
+  h += abertos.length ? plPorMes(abertos, l=>linha(l,true)) + (abertos.length>1 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
   if(pagos.length){
     const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
     h += Object.keys(porMes).sort().reverse().map(m=>{ const ll=porMes[m], t=ll.reduce((s,l)=>s+tot(l),0), [y,mm]=m.split('-');
