@@ -1424,8 +1424,8 @@ async function abrirPessoa(id){
       <strong style="font-size:13px;">💼 Salário e vales</strong>
       <div class="muted" style="font-size:12px;">Salário ${money(pessoa.salario||0)} · VT ${money(pessoa.vt_passagem||0)} × ${pessoa.vt_por_dia??2}/dia · VA ${money(pessoa.va_por_dia||0)}/dia</div>
       <div class="row" style="gap:8px;">
-        <div style="flex:1"><label>Mês</label><input id="pl-mes" type="month" value="${todayISO().slice(0,7)}" oninput="plDiasMes();plSalPrev()"></div>
-        <div style="flex:1"><label>Dias úteis</label><input id="pl-dias" type="number" min="0" value="${diasUteisMes(todayISO().slice(0,7))}" oninput="plSalPrev()"></div>
+        <div style="flex:1"><label>Mês do salário</label><input id="pl-mes" type="month" value="${mesAnterior(todayISO().slice(0,7))}" oninput="plDiasMes();plSalPrev()"></div>
+        <div style="flex:1"><label id="pl-dias-lbl">Dias úteis de ${nomeMes(todayISO().slice(0,7))} (VT/VA)</label><input id="pl-dias" type="number" min="0" value="${diasUteisMes(todayISO().slice(0,7))}" oninput="plSalPrev()"></div>
       </div>
       <div class="row" style="gap:8px;">
         <div style="flex:1"><label>Faltas sem motivo</label><input id="pl-faltas" type="number" min="0" value="0" oninput="plSalPrev()"></div>
@@ -1450,7 +1450,17 @@ function diasUteisMes(mes){
   for(let d=1; d<=ult; d++){ const w = new Date(y, m-1, d).getDay(); if(w>0 && w<6) n++; }
   return n;
 }
-function plDiasMes(){ const mes = document.getElementById('pl-mes').value; if(mes) document.getElementById('pl-dias').value = diasUteisMes(mes); }
+function mesSeguinte(mes){ const [y,m] = mes.split('-').map(Number); return m===12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,'0')}`; }
+function mesAnterior(mes){ const [y,m] = mes.split('-').map(Number); return m===1 ? `${y-1}-12` : `${y}-${String(m-1).padStart(2,'0')}`; }
+function nomeMes(mes){ const [y,m] = mes.split('-'); return PL_MESES[Number(m)-1]+'/'+y; }
+function rotMes(mes){ const [y,m] = mes.split('-'); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Number(m)-1]+'/'+y.slice(2); }
+// salário é do mês trabalhado; VT/VA são adiantados para o mês seguinte
+function plDiasMes(){
+  const mes = document.getElementById('pl-mes').value; if(!mes) return;
+  const prox = mesSeguinte(mes);
+  document.getElementById('pl-dias').value = diasUteisMes(prox);
+  document.getElementById('pl-dias-lbl').textContent = 'Dias úteis de '+nomeMes(prox)+' (VT/VA)';
+}
 function plSalCalc(){
   const p = window._plPessoaFull || {}, uteis = Number((document.getElementById('pl-dias')||{}).value)||0, faltas = Number((document.getElementById('pl-faltas')||{}).value)||0, atest = Number((document.getElementById('pl-atest')||{}).value)||0, dias = Math.max(0, uteis - faltas - atest);
   const sal = Number(p.salario)||0, vt = (Number(p.vt_passagem)||0) * (Number(p.vt_por_dia)||0) * dias;
@@ -1463,13 +1473,14 @@ function plSalPrev(){
   const el = document.getElementById('pl-salprev'); if(!el) return;
   const c = plSalCalc();
   const fx = []; if(c.faltas) fx.push(c.faltas+' sem motivo'); if(c.atest) fx.push(c.atest+' com atestado');
-  el.innerHTML = `<b>${c.dias} dias trabalhados</b>${fx.length?` (faltas: ${fx.join(', ')})`:''}<br>Salário ${money(c.sal)}${c.descFalta?` − faltas ${money(c.descFalta)}`:''}<br>+ VT ${money(c.vt)}${c.desc?` − desconto 6% ${money(c.desc)}`:''}<br>+ VA ${money(c.va)}<br><b>= ${money(c.total)}</b>`;
+  const mes = (document.getElementById('pl-mes')||{}).value || todayISO().slice(0,7), prox = mesSeguinte(mes);
+  el.innerHTML = `<b>Salário de ${nomeMes(mes)}</b>${fx.length?` (faltas: ${fx.join(', ')})`:''}<br>Salário ${money(c.sal)}${c.descFalta?` − faltas ${money(c.descFalta)}`:''}<br><b>VT e VA de ${nomeMes(prox)}</b>: ${c.dias} dias${(c.faltas+c.atest)?' (já descontadas as faltas)':''}<br>+ VT ${money(c.vt)}${c.desc?` − desconto 6% ${money(c.desc)}`:''}<br>+ VA ${money(c.va)}<br><b>= ${money(c.total)}</b>`;
 }
 async function plLancarSalario(pessoaId){
   const mes = document.getElementById('pl-mes').value || todayISO().slice(0,7), c = plSalCalc();
-  const [y, m] = mes.split('-'), nomes = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'], rot = nomes[Number(m)-1]+'/'+y.slice(2);
+  const [y, m] = mes.split('-'), rot = rotMes(mes), rotP = rotMes(mesSeguinte(mes));
   const nf = c.faltas + c.atest, sf = nf ? ' · '+nf+' falta'+(nf>1?'s':'') : '';
-  const itens = [['Salário', c.sal], ['Desconto faltas sem motivo ('+c.faltas+(c.faltas>1?' dias':' dia')+')', -c.descFalta], ['Vale transporte ('+c.dias+' dias'+sf+')', c.vt], ['Desconto VT 6%', -c.desc], ['Vale alimentação ('+c.dias+' dias'+sf+')', c.va]].filter(i => Math.abs(Number(i[1])) > 0.009);
+  const itens = [['Salário', c.sal], ['Desconto faltas sem motivo ('+c.faltas+(c.faltas>1?' dias':' dia')+')', -c.descFalta], ['Vale transporte '+rotP+' ('+c.dias+' dias'+sf+')', c.vt], ['Desconto VT 6%', -c.desc], ['Vale alimentação '+rotP+' ('+c.dias+' dias'+sf+')', c.va]].filter(i => Math.abs(Number(i[1])) > 0.009);
   if(!itens.length){ alert('Cadastre o salário e os vales em "Forma de pagamento" e toque em Salvar dados.'); return; }
   const ja = Object.values(window._plItens||{}).some(l => l.produto === 'Salário · '+rot);
   if(ja && !confirm('O salário de '+rot+' já foi lançado. Lançar de novo?')) return;
