@@ -1395,8 +1395,12 @@ async function abrirPessoa(id){
       <div class="row" style="gap:8px;">
         <div style="flex:1"><label>Mês</label><input id="pl-mes" type="month" value="${todayISO().slice(0,7)}" oninput="plDiasMes();plSalPrev()"></div>
         <div style="flex:1"><label>Dias úteis</label><input id="pl-dias" type="number" min="0" value="${diasUteisMes(todayISO().slice(0,7))}" oninput="plSalPrev()"></div>
-        <div style="flex:1"><label>Faltas</label><input id="pl-faltas" type="number" min="0" value="0" oninput="plSalPrev()"></div>
       </div>
+      <div class="row" style="gap:8px;">
+        <div style="flex:1"><label>Faltas sem motivo</label><input id="pl-faltas" type="number" min="0" value="0" oninput="plSalPrev()"></div>
+        <div style="flex:1"><label>Faltas com atestado</label><input id="pl-atest" type="number" min="0" value="0" oninput="plSalPrev()"></div>
+      </div>
+      <div class="muted" style="font-size:11px;">Sem motivo: desconta o dia do salário (salário ÷ 30), o VT e o VA. Com atestado: desconta só o VT e o VA.</div>
       <div id="pl-salprev" class="muted" style="font-size:13px;margin-top:6px;"></div>
       <button class="btn block" style="margin-top:8px;" onclick="plLancarSalario('${id}')">+ Lançar salário e vales do mês</button>
     </div>` : ''}
@@ -1417,21 +1421,24 @@ function diasUteisMes(mes){
 }
 function plDiasMes(){ const mes = document.getElementById('pl-mes').value; if(mes) document.getElementById('pl-dias').value = diasUteisMes(mes); }
 function plSalCalc(){
-  const p = window._plPessoaFull || {}, uteis = Number((document.getElementById('pl-dias')||{}).value)||0, faltas = Number((document.getElementById('pl-faltas')||{}).value)||0, dias = Math.max(0, uteis - faltas);
+  const p = window._plPessoaFull || {}, uteis = Number((document.getElementById('pl-dias')||{}).value)||0, faltas = Number((document.getElementById('pl-faltas')||{}).value)||0, atest = Number((document.getElementById('pl-atest')||{}).value)||0, dias = Math.max(0, uteis - faltas - atest);
   const sal = Number(p.salario)||0, vt = (Number(p.vt_passagem)||0) * (Number(p.vt_por_dia)||0) * dias;
   const desc = p.vt_desconto !== false ? Math.min(vt, +(sal*0.06).toFixed(2)) : 0;
   const va = (Number(p.va_por_dia)||0) * dias;
-  return { sal, vt, desc, va, dias, faltas, total: sal + vt - desc + va };
+  const descFalta = +((sal/30) * faltas).toFixed(2);
+  return { sal, vt, desc, va, dias, faltas, atest, descFalta, total: sal - descFalta + vt - desc + va };
 }
 function plSalPrev(){
   const el = document.getElementById('pl-salprev'); if(!el) return;
   const c = plSalCalc();
-  el.innerHTML = `<b>${c.dias} dias trabalhados</b>${c.faltas?` (${c.faltas} ${c.faltas>1?'faltas':'falta'})`:''}<br>Salário ${money(c.sal)}<br>+ VT ${money(c.vt)}${c.desc?` − desconto 6% ${money(c.desc)}`:''}<br>+ VA ${money(c.va)}<br><b>= ${money(c.total)}</b>`;
+  const fx = []; if(c.faltas) fx.push(c.faltas+' sem motivo'); if(c.atest) fx.push(c.atest+' com atestado');
+  el.innerHTML = `<b>${c.dias} dias trabalhados</b>${fx.length?` (faltas: ${fx.join(', ')})`:''}<br>Salário ${money(c.sal)}${c.descFalta?` − faltas ${money(c.descFalta)}`:''}<br>+ VT ${money(c.vt)}${c.desc?` − desconto 6% ${money(c.desc)}`:''}<br>+ VA ${money(c.va)}<br><b>= ${money(c.total)}</b>`;
 }
 async function plLancarSalario(pessoaId){
   const mes = document.getElementById('pl-mes').value || todayISO().slice(0,7), c = plSalCalc();
   const [y, m] = mes.split('-'), nomes = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'], rot = nomes[Number(m)-1]+'/'+y.slice(2);
-  const itens = [['Salário', c.sal], ['Vale transporte ('+c.dias+' dias'+(c.faltas?' · '+c.faltas+' falta'+(c.faltas>1?'s':''):'')+')', c.vt], ['Desconto VT 6%', -c.desc], ['Vale alimentação ('+c.dias+' dias'+(c.faltas?' · '+c.faltas+' falta'+(c.faltas>1?'s':''):'')+')', c.va]].filter(i => Math.abs(Number(i[1])) > 0.009);
+  const nf = c.faltas + c.atest, sf = nf ? ' · '+nf+' falta'+(nf>1?'s':'') : '';
+  const itens = [['Salário', c.sal], ['Desconto faltas sem motivo ('+c.faltas+(c.faltas>1?' dias':' dia')+')', -c.descFalta], ['Vale transporte ('+c.dias+' dias'+sf+')', c.vt], ['Desconto VT 6%', -c.desc], ['Vale alimentação ('+c.dias+' dias'+sf+')', c.va]].filter(i => Math.abs(Number(i[1])) > 0.009);
   if(!itens.length){ alert('Cadastre o salário e os vales em "Forma de pagamento" e toque em Salvar dados.'); return; }
   const ja = Object.values(window._plItens||{}).some(l => l.produto === 'Salário · '+rot);
   if(ja && !confirm('O salário de '+rot+' já foi lançado. Lançar de novo?')) return;
