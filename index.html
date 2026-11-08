@@ -1446,7 +1446,7 @@ function plPorMes(itens, linhaFn){
   return Object.keys(g).sort().map(m => {
     const [y, mm] = m.split('-'), t = g[m].reduce((s,l)=>s+(Number(l.quantidade)||0)*(Number(l.valor_unit)||0),0);
     return `<div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 2px;padding-bottom:4px;border-bottom:1px solid var(--line, #2e3242);">
-      <strong style="font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--gold, #c4a574);">Produção de ${PL_MESES[Number(mm)-1]||''}/${y||''}</strong>
+      <strong style="font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--gold, #c4a574);">${PL_MESES[Number(mm)-1]||''}/${y||''}</strong>
       <span class="muted" style="font-size:13px;">${money(t)}</span></div>` + g[m].map(linhaFn).join('');
   }).join('');
 }
