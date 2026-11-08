@@ -1345,9 +1345,11 @@ async function abrirPessoa(id){
         <div style="flex:1"><label>Salário (R$/mês)</label><input id="ep2-salario" inputmode="decimal" value="${Number(pessoa.salario)?String(pessoa.salario).replace('.',','):''}"></div>
       </div>
       <div class="row" style="gap:8px;">
-        <div style="flex:1"><label>Vale transporte (R$/mês)</label><input id="ep2-vt" inputmode="decimal" value="${Number(pessoa.vale_transporte)?String(pessoa.vale_transporte).replace('.',','):''}"></div>
-        <div style="flex:1"><label>Vale alimentação (R$/mês)</label><input id="ep2-va" inputmode="decimal" value="${Number(pessoa.vale_alimentacao)?String(pessoa.vale_alimentacao).replace('.',','):''}"></div>
+        <div style="flex:1"><label>VT: valor da passagem (R$)</label><input id="ep2-vtp" inputmode="decimal" value="${Number(pessoa.vt_passagem)?String(pessoa.vt_passagem).replace('.',','):''}"></div>
+        <div style="flex:1"><label>Passagens por dia</label><input id="ep2-vtd" type="number" min="0" value="${pessoa.vt_por_dia??2}"></div>
       </div>
+      <label class="checkline" style="margin-top:6px;"><input type="checkbox" id="ep2-vtdesc" ${pessoa.vt_desconto!==false?'checked':''}> Descontar até 6% do salário no VT</label>
+      <label>VA: valor por dia (R$)</label><input id="ep2-vad" inputmode="decimal" value="${Number(pessoa.va_por_dia)?String(pessoa.va_por_dia).replace('.',','):''}">
     </div>` : ''}
     <button class="btn sm" style="margin-top:10px;" onclick="salvarEdicaoPessoa('${id}')">Salvar dados</button>
 
@@ -1389,8 +1391,12 @@ async function abrirPessoa(id){
     ${tabela==='costureiras' && Number(pessoa.tabela)===1 ? `
     <div class="card" style="margin-top:10px;">
       <strong style="font-size:13px;">💼 Salário e vales</strong>
-      <div class="muted" style="font-size:12px;">Salário ${money(pessoa.salario||0)} · VT ${money(pessoa.vale_transporte||0)} · VA ${money(pessoa.vale_alimentacao||0)}</div>
-      <label>Mês</label><input id="pl-mes" type="month" value="${todayISO().slice(0,7)}">
+      <div class="muted" style="font-size:12px;">Salário ${money(pessoa.salario||0)} · VT ${money(pessoa.vt_passagem||0)} × ${pessoa.vt_por_dia??2}/dia · VA ${money(pessoa.va_por_dia||0)}/dia</div>
+      <div class="row" style="gap:8px;">
+        <div style="flex:1"><label>Mês</label><input id="pl-mes" type="month" value="${todayISO().slice(0,7)}" oninput="plDiasMes();plSalPrev()"></div>
+        <div style="flex:1"><label>Dias trabalhados</label><input id="pl-dias" type="number" min="0" value="${diasUteisMes(todayISO().slice(0,7))}" oninput="plSalPrev()"></div>
+      </div>
+      <div id="pl-salprev" class="muted" style="font-size:13px;margin-top:6px;"></div>
       <button class="btn block" style="margin-top:8px;" onclick="plLancarSalario('${id}')">+ Lançar salário e vales do mês</button>
     </div>` : ''}
     <div id="pl-lista" style="margin-top:14px;"><p class="muted">Carregando...</p></div>
@@ -1398,19 +1404,38 @@ async function abrirPessoa(id){
   window._plValores = {};
   if(tabela==='costureiras'){ const { data: pt } = await sb.from('precos_tabela').select('ficha_id,valor').eq('tabela', Number(pessoa.tabela)===1?1:2); (pt||[]).forEach(v=>{ window._plValores[v.ficha_id] = Number(v.valor)||0; }); }
   (valores||[]).forEach(v=>{ window._plValores[v.ficha_id] = Number(v.valor)||0; });
-  window._plPessoaFull = pessoa;
+  window._plPessoaFull = pessoa; setTimeout(plSalPrev, 0);
   window._plTipo = tabela;
   plRender(id);
 }
+// dias de segunda a sexta do mês (AAAA-MM)
+function diasUteisMes(mes){
+  const [y, m] = mes.split('-').map(Number), ult = new Date(y, m, 0).getDate(); let n = 0;
+  for(let d=1; d<=ult; d++){ const w = new Date(y, m-1, d).getDay(); if(w>0 && w<6) n++; }
+  return n;
+}
+function plDiasMes(){ const mes = document.getElementById('pl-mes').value; if(mes) document.getElementById('pl-dias').value = diasUteisMes(mes); }
+function plSalCalc(){
+  const p = window._plPessoaFull || {}, dias = Number((document.getElementById('pl-dias')||{}).value)||0;
+  const sal = Number(p.salario)||0, vt = (Number(p.vt_passagem)||0) * (Number(p.vt_por_dia)||0) * dias;
+  const desc = p.vt_desconto !== false ? Math.min(vt, +(sal*0.06).toFixed(2)) : 0;
+  const va = (Number(p.va_por_dia)||0) * dias;
+  return { sal, vt, desc, va, dias, total: sal + vt - desc + va };
+}
+function plSalPrev(){
+  const el = document.getElementById('pl-salprev'); if(!el) return;
+  const c = plSalCalc();
+  el.innerHTML = `Salário ${money(c.sal)}<br>+ VT ${money(c.vt)}${c.desc?` − desconto 6% ${money(c.desc)}`:''}<br>+ VA ${money(c.va)}<br><b>= ${money(c.total)}</b>`;
+}
 async function plLancarSalario(pessoaId){
-  const p = window._plPessoaFull || {}, mes = document.getElementById('pl-mes').value || todayISO().slice(0,7);
+  const mes = document.getElementById('pl-mes').value || todayISO().slice(0,7), c = plSalCalc();
   const [y, m] = mes.split('-'), nomes = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'], rot = nomes[Number(m)-1]+'/'+y.slice(2);
-  const itens = [['Salário', p.salario], ['Vale transporte', p.vale_transporte], ['Vale alimentação', p.vale_alimentacao]].filter(i => Number(i[1]) > 0);
+  const itens = [['Salário', c.sal], ['Vale transporte ('+c.dias+' dias)', c.vt], ['Desconto VT 6%', -c.desc], ['Vale alimentação ('+c.dias+' dias)', c.va]].filter(i => Math.abs(Number(i[1])) > 0.009);
   if(!itens.length){ alert('Cadastre o salário e os vales em "Forma de pagamento" e toque em Salvar dados.'); return; }
   const ja = Object.values(window._plItens||{}).some(l => l.produto === 'Salário · '+rot);
   if(ja && !confirm('O salário de '+rot+' já foi lançado. Lançar de novo?')) return;
   const ult = new Date(Number(y), Number(m), 0).getDate();
-  const { error } = await sb.from('producao_lancamentos').insert(itens.map(i => ({ pessoa_tipo: 'costureiras', pessoa_id: pessoaId, ficha_id: null, produto: i[0]+' · '+rot, quantidade: 1, valor_unit: Number(i[1]), data: `${y}-${m}-${String(ult).padStart(2,'0')}` })));
+  const { error } = await sb.from('producao_lancamentos').insert(itens.map(i => ({ pessoa_tipo: 'costureiras', pessoa_id: pessoaId, ficha_id: null, produto: i[0]+' · '+rot, quantidade: 1, valor_unit: +Number(i[1]).toFixed(2), data: `${y}-${m}-${String(ult).padStart(2,'0')}` })));
   if(error){ alert(error.message); return; }
   plRender(pessoaId);
 }
@@ -1544,7 +1569,8 @@ async function salvarEdicaoPessoa(id){
   if(tabela==='costureiras' && document.getElementById('ep2-tabela')){
     const n = (id2) => Number(String(document.getElementById(id2).value||'').replace(/\./g,'').replace(',','.')) || 0;
     patch.tabela = Number(document.getElementById('ep2-tabela').value);
-    patch.salario = n('ep2-salario'); patch.vale_transporte = n('ep2-vt'); patch.vale_alimentacao = n('ep2-va');
+    patch.salario = n('ep2-salario'); patch.vt_passagem = n('ep2-vtp'); patch.vt_por_dia = Number(document.getElementById('ep2-vtd').value)||0;
+    patch.vt_desconto = document.getElementById('ep2-vtdesc').checked; patch.va_por_dia = n('ep2-vad');
   }
   const { error } = await sb.from(tabela).update(patch).eq('id', id);
   if(error){ document.getElementById('ep2-msg').textContent = error.message; return; }
