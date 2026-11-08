@@ -1484,7 +1484,7 @@ async function plRender(pessoaId){
     </div>`;
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
   let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;"><strong>A pagar</strong><strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong></div>`;
-  if(abertos.length) h += `<div style="display:flex;gap:8px;margin:8px 0;"><button class="btn ghost" style="flex:1" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button><button class="btn ghost" onclick="plWhats('${pessoaId}', true)">🇪🇸 Español</button></div>`;
+  if(abertos.length) h += `<div style="display:flex;gap:8px;margin:8px 0;"><button class="btn ghost" style="flex:1" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button>${/leidis/i.test((window._plPessoa||{}).nome||'') ? `<button class="btn ghost" onclick="plWhats('${pessoaId}', true)">🇪🇸 Español</button>` : ''}</div>`;
   h += abertos.length ? plPorMes(abertos, l=>linha(l,true)) + (abertos.length>1 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
   if(pagos.length){
     const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
