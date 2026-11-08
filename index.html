@@ -779,7 +779,7 @@ async function abrirProduto(fichaId){
   window._pmServ = window._pmServ || {}; window._pmServ['epf'] = f.servico_id || null;
   const fotos = (f.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
   const [{ data: bdi }, { data: bds }] = await Promise.all([
-    sb.from('fichas_tecnicas').select('id,nome').like('nome', 'Bordado · %').eq('ativo', true).order('nome'),
+    sb.from('fichas_tecnicas').select('id,nome,custo_bordado').like('nome', 'Bordado · %').eq('ativo', true).order('nome'),
     sb.from('ficha_bordados').select('bordado_id,quantidade').eq('ficha_id', fichaId)
   ]);
   window._bdItens = bdi||[]; window._bdSel = {}; (bds||[]).forEach(r => { window._bdSel[r.bordado_id] = r.quantidade; });
@@ -808,7 +808,7 @@ async function abrirProduto(fichaId){
     <div class="muted" style="font-size:12px;margin-top:-2px;">Quantos bordados de cada parte essa peça leva (0 = não leva).</div>
     <div class="card" style="padding:6px 12px;">${(window._bdItens||[]).map(b=>`
       <div class="item" style="gap:8px;"><span style="flex:1">${escAttr(b.nome.replace('Bordado · ',''))}</span>
-      <input type="number" min="0" class="epf-bord" data-b="${b.id}" value="${(window._bdSel||{})[b.id]||0}" style="width:70px;text-align:center;"></div>`).join('') || '<p class="muted">Nenhum bordado cadastrado.</p>'}</div>`}
+      <span class="muted" style="font-size:12px;">${b.custo_bordado!=null?money(b.custo_bordado):'sem custo'}</span><input type="number" min="0" class="epf-bord" data-b="${b.id}" value="${(window._bdSel||{})[b.id]||0}" style="width:70px;text-align:center;" oninput="atualizarCustoProduto('epf')"></div>`).join('') || '<p class="muted">Nenhum bordado cadastrado.</p>'}</div>`}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoProduto('${fichaId}')">Salvar alterações</button>
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirProduto('${fichaId}')">Excluir produto</button>
     <p id="epf-msg" class="error"></p>
@@ -1303,11 +1303,14 @@ async function renderEquipe(){
 }
 async function renderTabelas(){
   const c = document.getElementById('content'), t = state.tabelaSel || 1;
-  const [{ data: fichas }, { data: precos }] = await Promise.all([
+  let [{ data: fichas }, { data: precos }] = await Promise.all([
     sb.from('fichas_tecnicas').select('id,nome').eq('ativo', true).order('nome'),
     sb.from('precos_tabela').select('*').eq('tabela', t)
   ]);
   const pm = {}; (precos||[]).forEach(p => { pm[p.ficha_id] = Number(p.valor); });
+  const { data: bds } = await sb.from('fichas_tecnicas').select('id,nome,custo_bordado').like('nome','Bordado · %').eq('ativo', true).order('nome');
+  const bordados = bds||[];
+  fichas = (fichas||[]).filter(f => !/^Bordado/.test(f.nome));
   const ordem = (fichas||[]).slice().sort((a,b) => ((b.id in pm) - (a.id in pm)) || a.nome.localeCompare(b.nome));
   c.innerHTML = `
     <div class="segmented">
@@ -1321,11 +1324,26 @@ async function renderTabelas(){
       <button class="${t===2?'active':''}" onclick="state.tabelaSel=2;loadTab();">Tabela 2 · só produção</button>
     </div>
     <p class="muted" style="font-size:12px;">Valor pago por peça. Vale para todas as costureiras dessa tabela. Deixe vazio o que não se aplica. Salva sozinho ao sair do campo.</p>
+    ${t===1 ? '' : ''}
     <div class="card">${ordem.map(f => `
       <div class="item" style="gap:8px;">
         <span style="flex:1">${escAttr(f.nome)}</span>
         <input inputmode="decimal" placeholder="—" style="width:90px;text-align:right;" value="${f.id in pm ? String(pm[f.id]).replace('.',',') : ''}" onchange="salvarPrecoTabela(${t},'${f.id}',this)">
+      </div>`).join('')}</div>
+    <h2 style="font-size:15px;margin-top:20px;">🪡 Custo de cada bordado</h2>
+    <p class="muted" style="font-size:12px;margin-top:-4px;">Usado só no custo do produto (não gera pagamento).</p>
+    <div class="card">${bordados.map(b => `
+      <div class="item" style="gap:8px;">
+        <span style="flex:1">${escAttr(b.nome.replace('Bordado · ',''))}</span>
+        <input inputmode="decimal" placeholder="—" style="width:90px;text-align:right;" value="${b.custo_bordado!=null ? String(b.custo_bordado).replace('.',',') : ''}" onchange="salvarCustoBordado('${b.id}',this)">
       </div>`).join('')}</div>`;
+}
+async function salvarCustoBordado(id, inp){
+  const txt = inp.value.trim(), v = txt==='' ? null : Number(txt.replace(/\./g,'').replace(',','.'));
+  if(v!=null && !(v>=0)){ alert('Valor inválido.'); return; }
+  const { error } = await sb.from('fichas_tecnicas').update({ custo_bordado: v }).eq('id', id);
+  if(error){ alert(error.message); return; }
+  inp.style.borderColor = '#2E8B57';
 }
 async function salvarPrecoTabela(t, fichaId, inp){
   const txt = inp.value.trim();
@@ -1700,10 +1718,18 @@ function custoUnit(m){ const pr=Number(m&&m.preco)||0; if(!(pr>0)) return null; 
 function custoProdutoHtml(prefix){
   const sel = window._pmSel[prefix] || {}; let tot = 0, semPreco = [];
   Object.keys(sel).forEach(id => { const m = materialDe(id); if(!m) return; const cu = custoUnit(m); const q = Number(sel[id])||0; if(cu==null){ if(q) semPreco.push(m.nome); return; } tot += cu*q; });
+  let bord = 0, bordSem = [];
+  if(prefix === 'epf'){
+    const inps = document.querySelectorAll('.epf-bord');
+    const qtdDe = (id) => { const i = [...inps].find(x => x.dataset.b === id); return i ? (Number(i.value)||0) : ((window._bdSel||{})[id]||0); };
+    (window._bdItens||[]).forEach(b => { const q = qtdDe(b.id); if(!q) return; if(b.custo_bordado==null) bordSem.push(b.nome.replace('Bordado · ','')); else bord += q*Number(b.custo_bordado); });
+  }
   const sid = (window._pmServ||{})[prefix], pr = (window._precos||{})[sid] || {};
   const lin = (a,b,bold) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;${bold?'font-weight:700;':''}"><span>${a}</span><span>${b}</span></div>`;
   let h = `<div style="display:flex;justify-content:space-between;align-items:center;"><strong>💰 Custo de material por paramento</strong><strong style="font-size:17px;">${money(tot)}</strong></div>`+
     (semPreco.length ? `<div class="muted" style="font-size:12px;margin-top:4px;">Sem preço cadastrado: ${semPreco.join(', ')}</div>` : '');
+  if(bord || bordSem.length) h += lin('🪡 Bordado', money(bord)) + (bordSem.length ? `<div class="muted" style="font-size:12px;">Bordado sem custo: ${bordSem.join(', ')}</div>` : '');
+  tot += bord;
   if(sid && (pr[1]!=null || pr[2]!=null)){
     h += `<div style="border-top:1px solid var(--line, #2e3242);margin-top:10px;padding-top:8px;">`;
     if(pr[1]!=null) h += lin('🧵 Mão de obra · Tabela 1', money(pr[1])) + lin('= Custo total · Tabela 1', money(tot+pr[1]), true);
