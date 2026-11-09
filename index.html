@@ -278,7 +278,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 14:05</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 14:55</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -521,7 +521,7 @@ async function renderKits(){
 }
 async function editarKit(kitId){
   const [{ data: fichas }, kr] = await Promise.all([
-    sb.from('fichas_tecnicas').select('id,nome,preco_venda').eq('ativo', true).eq('tipo','produto').order('nome'),
+    sb.from('fichas_tecnicas').select('id,nome,preco_venda,revenda').eq('ativo', true).eq('tipo','produto').order('nome'),
     kitId ? sb.from('kits').select('*, kit_itens(ficha_id,quantidade)').eq('id', kitId).single() : Promise.resolve({ data: null })]);
   const k = kr.data || { nome: '', desconto_pct: 0, kit_itens: [] };
   window._kitFichas = {}; (fichas||[]).forEach(f => window._kitFichas[f.id] = f);
@@ -529,7 +529,7 @@ async function editarKit(kitId){
   showModal(`<h2>${kitId?'Editar kit':'Novo kit'} <button class="close" onclick="closeModal()">&times;</button></h2>
     <label>Nome do kit</label><input id="kit-nome" value="${escAttr(k.nome)}" placeholder="Ex.: Kit Grau 33 · Lojas Filosóficas">
     <label>Peças do kit</label>
-    <div class="row" style="gap:6px;"><select id="kit-add" style="flex:3"><option value="">+ escolher produto...</option>${(fichas||[]).map(f=>`<option value="${f.id}">${escAttr(f.nome)}</option>`).join('')}</select>
+    <div class="row" style="gap:6px;"><select id="kit-add" style="flex:3"><option value="">+ escolher produto ou joia...</option>${(fichas||[]).some(f=>f.revenda)?`<optgroup label="💎 Joias">${(fichas||[]).filter(f=>f.revenda).map(f=>`<option value="${f.id}">💎 ${escAttr(f.nome)}</option>`).join('')}</optgroup>`:''}<optgroup label="Produtos">${(fichas||[]).filter(f=>!f.revenda).map(f=>`<option value="${f.id}">${escAttr(f.nome)}</option>`).join('')}</optgroup></select>
       <input id="kit-add-q" type="number" min="1" value="1" style="flex:1"><button class="btn sm" onclick="kitAddItem()">Adicionar</button></div>
     <div class="muted" style="font-size:12px;margin-top:6px;">Toque no preço de cada peça para editar (muda no produto também).</div><div id="kit-itens" class="card" style="margin-top:4px;"></div>
     <label>Preço fechado do kit (R$) — cada kit</label><input id="kit-fixo" inputmode="decimal" placeholder="Ex.: 850,00 (deixe vazio para somar as peças)" value="${k.preco_fixo!=null?String(k.preco_fixo).replace('.',','):''}" oninput="kitRender()">
@@ -556,7 +556,7 @@ async function kitRender(){
   const box = document.getElementById('kit-itens'), tbox = document.getElementById('kit-total'); if(!box) return;
   let sub = 0; const semPreco = [];
   box.innerHTML = window._kitItens.map((i,ix) => { const f = window._kitFichas[i.ficha_id]||{}, pv = f.preco_venda!=null ? Number(f.preco_venda) : null; if(pv==null) semPreco.push(f.nome); sub += (pv||0)*i.quantidade;
-    return `<div class="item" style="gap:6px;"><span style="flex:1">${escAttr(f.nome||'?')}</span><input type="number" min="1" value="${i.quantidade}" style="width:56px;text-align:center;" onchange="window._kitItens[${ix}].quantidade=Number(this.value)||1;kitRender()">
+    return `<div class="item" style="gap:6px;"><span style="flex:1">${f.revenda?'💎 ':''}${escAttr(f.nome||'?')}</span><input type="number" min="1" value="${i.quantidade}" style="width:56px;text-align:center;" onchange="window._kitItens[${ix}].quantidade=Number(this.value)||1;kitRender()">
       <input inputmode="decimal" placeholder="R$ preço" title="Preço de venda do produto" value="${pv!=null?String(pv).replace('.',','):''}" style="width:96px;text-align:right;" onchange="kitSalvarPreco('${i.ficha_id}', this)"><button class="btn sm ghost" style="color:var(--danger);" onclick="window._kitItens.splice(${ix},1);kitRender()">✕</button></div>`; }).join('') || '<p class="muted">Adicione as peças do kit.</p>';
   const fixo = numBR(document.getElementById('kit-fixo').value);
   const d = fixo!=null ? 0 : (numBR(document.getElementById('kit-desc').value)||0), tot = fixo!=null ? fixo : sub*(1-d/100);
