@@ -311,7 +311,7 @@ async function renderHoje(){
   const c = document.getElementById('content');
   const dia = state.hojeData;
   const { data: pecas, error } = await sb.from('pecas')
-    .select('*, fichas_tecnicas(nome, ficha_fotos(url,ordem)), pedidos(numero, prazo, urgente, clientes(nome)), costureiras(nome), faccionistas(nome)')
+    .select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem)), pedidos(numero, prazo, urgente, clientes(nome)), costureiras(nome), faccionistas(nome)')
     .eq('dia_producao', dia)
     .order('criado_em');
 
@@ -1029,6 +1029,7 @@ async function npAbrirSeletorPeca(){
     <input type="number" id="np2-qtd" value="1" min="1">
     <label>Dia de produção</label>
     <input type="date" id="np2-dia" value="${todayISO()}">
+    <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="np2-plastico"> Com plástico (sob encomenda)</label>
     ${responsavelSelectHtml('np2', costureiras, faccionistas)}
     <button class="btn block gold" style="margin-top:16px;" onclick="npConfirmarPeca()">Adicionar à lista</button>
     <p id="np2-msg" class="error"></p>
@@ -1067,6 +1068,27 @@ async function npSalvarFicha(){
   }
   await npAbrirSeletorPeca();
 }
+// Nível de costura: metal maçônico no produto = detalhe; plástico vem do pedido
+async function nivelDaPeca(fichaId, plastico){
+  const { data: f } = await sb.from('fichas_tecnicas').select('id,nome,servico_id,tipo_peca_id, tipos_peca(nome)').eq('id', fichaId).single();
+  if(!f) return null;
+  let tipo = (f.tipos_peca && f.tipos_peca.nome) || '';
+  if(!/^(Avental|Colar|Faixa)$/i.test(tipo)){ const m = String(f.nome).match(/^(Avental|Colar|Faixa)/i); tipo = m ? m[1] : ''; }
+  if(!tipo) return f.servico_id ? { servico_id: f.servico_id, nivel: null } : null;
+  tipo = tipo[0].toUpperCase() + tipo.slice(1).toLowerCase();
+  const { data: fm } = await sb.from('ficha_materiais').select('materiais(categoria)').eq('ficha_id', fichaId);
+  const metal = (fm||[]).some(r => r.materiais && r.materiais.categoria === 'Metais maçônicos');
+  const nivel = metal && plastico ? 3 : (metal || plastico ? 2 : 1);
+  const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').eq('nome', `${tipo} · Nível ${nivel}`).eq('ativo', true).limit(1);
+  return { servico_id: sv && sv[0] ? sv[0].id : f.servico_id, nivel, nome: sv && sv[0] ? sv[0].nome : null };
+}
+async function valorCostureiraServico(costureiraId, servicoId){
+  const { data: own } = await sb.from('costureira_valores').select('valor').eq('costureira_id', costureiraId).eq('ficha_id', servicoId).maybeSingle();
+  if(own) return Number(own.valor);
+  const { data: c } = await sb.from('costureiras').select('tabela').eq('id', costureiraId).single();
+  const { data: pt } = await sb.from('precos_tabela').select('valor').eq('tabela', c && Number(c.tabela)===1 ? 1 : 2).eq('ficha_id', servicoId).maybeSingle();
+  return pt ? Number(pt.valor) : null;
+}
 async function npConfirmarPeca(){
   const msg = document.getElementById('np2-msg');
   const ficha_id = document.getElementById('np2-ficha').value;
@@ -1090,7 +1112,10 @@ async function npConfirmarPeca(){
     valor_faccionista = data?.valor ?? null;
   }
 
-  npPecas.push({ ficha_id, nome: f?.nome||'Peça', ficha: f, quantidade, dia_producao, costureira_id, faccionista_id, costureiraNome, faccionistaNome, valor_costureira, valor_faccionista });
+  const com_plastico = !!document.getElementById('np2-plastico')?.checked;
+  const nv = await nivelDaPeca(ficha_id, com_plastico);
+  if(costureira_id && nv && nv.servico_id && valor_costureira == null) valor_costureira = await valorCostureiraServico(costureira_id, nv.servico_id);
+  npPecas.push({ ficha_id, nome: (f?.nome||'Peça') + (nv && nv.nivel ? ` · Nível ${nv.nivel}` : ''), ficha: f, quantidade, dia_producao, costureira_id, faccionista_id, costureiraNome, faccionistaNome, valor_costureira, valor_faccionista, com_plastico, servico_id: nv ? nv.servico_id : null });
   await npMostrarForm();
 }
 
@@ -1120,6 +1145,7 @@ async function salvarNovoPedido(){
       pedido_id: data.id, ficha_id: p.ficha_id, quantidade: p.quantidade,
       dia_producao: p.dia_producao, costureira_id: p.costureira_id, faccionista_id: p.faccionista_id,
       valor_costureira: p.valor_costureira, valor_faccionista: p.valor_faccionista,
+      com_plastico: !!p.com_plastico, servico_id: p.servico_id || null,
     }));
     const { error: errPecas } = await sb.from('pecas').insert(linhas);
     if(errPecas){ msg.textContent = 'Pedido criado, mas houve erro ao salvar as peças: ' + errPecas.message; }
@@ -1131,7 +1157,9 @@ async function salvarNovoPedido(){
 
 async function abrirPedido(id){
   const { data: pedido } = await sb.from('pedidos').select('*, clientes(nome,telefone)').eq('id', id).single();
-  const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
+  const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
+  { const sids = [...new Set((pecas||[]).map(p=>p.servico_id).filter(Boolean))]; window._nivelNome = {};
+    if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => window._nivelNome[x.id] = x.nome); } }
   showModal(`
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
     <p class="muted">${pedido.clientes?.nome || ''} · Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
@@ -1142,7 +1170,7 @@ async function abrirPedido(id){
           <div style="display:flex;gap:10px;align-items:center;">
             ${fichaThumbImg(p.fichas_tecnicas, 40)}
             <div>
-              <strong>${p.fichas_tecnicas?.nome||'Peça'}</strong> ×${p.quantidade}
+              <strong>${p.fichas_tecnicas?.nome||'Peça'}</strong> ×${p.quantidade}${p.com_plastico?' <span class="pill">plástico</span>':''}${(window._nivelNome||{})[p.servico_id]?` <span class="pill">${window._nivelNome[p.servico_id].replace(/^.* · /,'')}</span>`:''}
               <div class="muted">${p.dia_producao?('Produção: '+fmtDate(p.dia_producao)):'Sem data definida'} · <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span></div>
             </div>
           </div>
@@ -1208,6 +1236,7 @@ async function adicionarPeca(pedidoId){
     <input type="number" id="pc-qtd" value="1" min="1">
     <label>Dia de produção</label>
     <input type="date" id="pc-dia" value="${todayISO()}">
+    <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="pc-plastico"> Com plástico (sob encomenda)</label>
     ${responsavelSelectHtml('pc', costureiras, faccionistas)}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarPeca('${pedidoId}')">Salvar peça</button>
     <p id="pc-msg" class="error"></p>
@@ -1238,8 +1267,12 @@ async function salvarPeca(pedidoId){
     valor_faccionista = data?.valor ?? null;
   }
 
+  const com_plastico = !!document.getElementById('pc-plastico')?.checked;
+  const nv = await nivelDaPeca(ficha_id, com_plastico);
+  if(costureira_id && nv && nv.servico_id && valor_costureira == null) valor_costureira = await valorCostureiraServico(costureira_id, nv.servico_id);
   const { error } = await sb.from('pecas').insert({
-    pedido_id: pedidoId, ficha_id, quantidade, dia_producao, costureira_id, faccionista_id, valor_costureira, valor_faccionista
+    pedido_id: pedidoId, ficha_id, quantidade, dia_producao, costureira_id, faccionista_id, valor_costureira, valor_faccionista,
+    com_plastico, servico_id: nv ? nv.servico_id : null
   });
   if(error){ msg.textContent = error.message; return; }
   closeModal();
@@ -1276,7 +1309,7 @@ async function salvarFicha(pedidoId){
 }
 
 async function editarPeca(id){
-  const { data: p } = await sb.from('pecas').select('*, fichas_tecnicas(nome)').eq('id', id).single();
+  const { data: p } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome)').eq('id', id).single();
   const { data: costureiras } = await sb.from('costureiras').select('*').eq('ativo', true).order('nome');
   const { data: faccionistas } = await sb.from('faccionistas').select('*').eq('ativo', true).order('nome');
   showModal(`
@@ -2315,12 +2348,12 @@ async function renderRelatorio(){
   const { inicio, fim } = periodoAtual(relatorioRef);
 
   const { data: pecas, error } = await sb.from('pecas')
-    .select('*, fichas_tecnicas(nome), pedidos(numero), costureiras(id,nome), faccionistas(id,nome)')
+    .select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome), pedidos(numero), costureiras(id,nome), faccionistas(id,nome)')
     .eq('status', 'pronto')
     .gte('data_pronto', inicio).lte('data_pronto', fim);
   // também inclui entregue
   const { data: pecas2 } = await sb.from('pecas')
-    .select('*, fichas_tecnicas(nome), pedidos(numero), costureiras(id,nome), faccionistas(id,nome)')
+    .select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome), pedidos(numero), costureiras(id,nome), faccionistas(id,nome)')
     .eq('status', 'entregue')
     .gte('data_pronto', inicio).lte('data_pronto', fim);
 
