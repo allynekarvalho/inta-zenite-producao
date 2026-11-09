@@ -392,11 +392,12 @@ function filtrarChips(inputId, listId){
 }
 
 async function renderBordados(alvo){
-  const c = alvo || document.getElementById('est-lista') || document.getElementById('content');
+  const c = alvo || document.getElementById('est-bord-partes') || document.getElementById('content');
   const { data } = await sb.from('fichas_tecnicas').select('id,nome,custo_bordado').eq('tipo','bordado').eq('ativo', true).order('nome');
   const nm = (n) => escAttr(String(n||'').replace(/^Bordado · /,''));
   c.innerHTML = `
-    <p class="muted" style="font-size:13px;margin-top:10px;">Partes bordadas (ex.: corpo e abeta do avental). Cadastre aqui e depois, em cada produto, diga quantos de cada ele leva em <b>"🪡 Bordados desta peça"</b>. O custo entra no custo do produto.</p>
+    <h2 style="font-size:15px;margin:20px 0 4px;">🪡 Partes bordadas pelo Pedro</h2>
+    <p class="muted" style="font-size:13px;margin-top:0;">Partes bordadas (ex.: corpo e abeta do avental). Cadastre aqui e depois, em cada produto, diga quantos de cada ele leva em <b>"🪡 Bordados desta peça"</b>. O custo entra no custo do produto.</p>
     <div class="card">${(data||[]).map(b => `
       <div class="item" style="gap:8px;">
         <span style="flex:1">${nm(b.nome)}</span>
@@ -593,7 +594,7 @@ async function uploadParaStorage(prefixoPasta, file){
 }
 
 // ===== Lista de materiais do produto (reaproveita o cadastro de Materiais/estoque) =====
-const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Outro'];
+const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Bordados','Outro'];
 function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-'); }
 window._pmSel = window._pmSel || {};
 
@@ -1832,14 +1833,15 @@ async function renderMateriais(){
   }
   html += `
     <input id="est-busca" placeholder="🔍 Buscar material..." style="margin-top:14px;" oninput="filtrarEstoque()">
-    <div class="chips">${cats.map(ct=>`<button type="button" class="chip ${filtro===ct?'active':''}" onclick="state.estoqueCat='${ct}'; loadTab();">${ct}</button>`).join('')}<button type="button" class="chip ${filtro==='Bordados'?'active':''}" onclick="state.estoqueCat='Bordados'; loadTab();">🪡 Bordados</button></div>
+    <div class="chips">${cats.map(ct=>`<button type="button" class="chip ${filtro===ct?'active':''}" onclick="state.estoqueCat='${ct}'; loadTab();">${ct}</button>`).join('')}</div>
     <div id="est-lista"></div>`;
   c.innerHTML = html;
-  if(filtro === 'Bordados'){ document.getElementById('est-busca').style.display='none'; renderBordados(document.getElementById('est-lista')); return; }
   filtrarEstoque();
 }
 function filtrarEstoque(){
   const div = document.getElementById('est-lista'); if(!div) return;
+  if((state.estoqueCat||'Todas') === 'Bordados') setTimeout(() => { let d = document.getElementById('est-bord-partes'); if(!d){ d = document.createElement('div'); d.id = 'est-bord-partes'; div.after(d); } renderBordados(d); }, 0);
+  else { const d = document.getElementById('est-bord-partes'); if(d) d.remove(); }
   const q = (document.getElementById('est-busca')?.value||'').toLowerCase().trim();
   const filtro = state.estoqueCat || 'Todas';
   const lista = (window._estoqueCache||[]).filter(m => {
