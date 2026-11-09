@@ -660,6 +660,7 @@ async function renderProdutos(){
     sb.from('tipos_peca').select('*').order('nome'),
   ]);
   window._prodPotencias = potencias||[];
+  window._todosProdutos = null;
   const potSel = (potencias||[]).find(p => p.id === state.produtos.potenciaId);
   if(!state.produtos.grupo) state.produtos.grupo = (potSel && potSel.grupo) || 'simbolica';
   const grupoPot = state.produtos.grupo;
@@ -675,6 +676,8 @@ async function renderProdutos(){
 
   let html = `
     <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
+    <input id="prod-busca-geral" placeholder="🔍 Buscar produto (ex.: avental, 33, GOB...)" oninput="buscarProdutoGeral()" autocomplete="off">
+    <div id="prod-busca-res"></div>
     <h2 style="font-size:15px;">Potência</h2>
     <div class="segmented" style="margin-bottom:10px;"><button class="${grupoPot==='simbolica'?'active':''}" onclick="trocarGrupoPotencia('simbolica')">Lojas Simbólicas</button><button class="${grupoPot==='filosofica'?'active':''}" onclick="trocarGrupoPotencia('filosofica')">Lojas Filosóficas</button></div>
     <div class="row">
@@ -825,6 +828,19 @@ async function carregarProdutosFiltrados(){
   `;
 }
 
+let _buscaGeralT = null;
+function buscarProdutoGeral(){
+  clearTimeout(_buscaGeralT);
+  _buscaGeralT = setTimeout(async () => {
+    const q = (document.getElementById('prod-busca-geral').value||'').trim(), div = document.getElementById('prod-busca-res');
+    if(!div) return; if(q.length < 2){ div.innerHTML = ''; return; }
+    if(!window._todosProdutos){ const { data } = await sb.from('fichas_tecnicas').select('id,nome,unidade_producao,revenda, ficha_fotos(url,ordem), potencias(nome), tipos_peca(nome), ritos(nome)').eq('ativo', true).eq('tipo','produto').order('nome'); window._todosProdutos = data||[]; }
+    const sem = t => (t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+    const palavras = sem(q).split(/\s+/).filter(Boolean);
+    const res = window._todosProdutos.filter(f => { const txt = sem([f.nome, f.potencias&&f.potencias.nome, f.tipos_peca&&f.tipos_peca.nome, f.ritos&&f.ritos.nome].join(' ')); return palavras.every(w => txt.includes(w)); });
+    div.innerHTML = `<div class="card" style="margin-top:6px;">${res.slice(0,40).map(f => `<div class="item" onclick="${f.revenda?`state.produtos.aba='joias';loadTab();setTimeout(()=>editarJoia('${f.id}'),300)`:`abrirProduto('${f.id}')`}" style="cursor:pointer;"><div style="display:flex;gap:10px;align-items:center;">${fichaThumbImg(f, 40)}<div><strong>${escAttr(f.nome)}</strong><div class="muted" style="font-size:12px;">${[f.revenda?'💎 joia':'', f.potencias&&f.potencias.nome, f.ritos&&f.ritos.nome].filter(Boolean).map(escAttr).join(' · ')}</div></div></div></div>`).join('') || '<p class="muted">Nada encontrado.</p>'}</div>`;
+  }, 200);
+}
 async function uploadParaStorage(prefixoPasta, file){
   file = await comprimirFoto(file);
   const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
