@@ -1460,7 +1460,7 @@ function pedidoPecasHtml(pecas, pedidoId){
   return Object.values(grupos).map(g => { const k = g[0], tot = g.reduce((s,p)=>s+vendaLinha(p),0);
     return `<details class="card" style="margin:8px 0;padding:10px 12px;"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px;">
       <strong>📦 ${escAttr(nomeKit[k.kit_id]||'Kit')} × ${k.kit_qtd||1}</strong><strong>${money(tot)}</strong></summary>
-      <div class="muted" style="font-size:12px;margin:4px 0;">${k.desconto_pct?`desconto ${k.desconto_pct}% · `:''}toque para ver as peças</div>
+      <div class="muted" style="font-size:12px;margin:4px 0;">${Number(k.desconto_pct)?`desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}% · `:''}toque para ver as peças</div>
       ${g.map(pecaItemHtml).join('')}
       <div class="muted" style="font-size:13px;margin-top:6px;">Cada kit: <b>${money(tot/(k.kit_qtd||1))}</b></div>
       <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do kit</button>
