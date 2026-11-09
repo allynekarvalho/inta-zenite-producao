@@ -460,7 +460,7 @@ function filtrarJoias(){
   const l = (window._joiasCache||[]).filter(j => !q || [j.nome, j.fornecedores&&j.fornecedores.nome, j.observacao].filter(Boolean).join(' ').toLowerCase().includes(q));
   document.getElementById('jo-lista').innerHTML = l.map(j => { const luc = (Number(j.preco_venda)||0) - (Number(j.custo_compra)||0);
     return `<div class="card" style="cursor:pointer;display:flex;gap:10px;align-items:center;" onclick="editarJoia('${j.id}')">${fichaThumbImg(j, 52)}
-      <div style="flex:1"><strong>${escAttr(j.nome)}</strong><div class="muted" style="font-size:12px;">${escAttr(j.fornecedores&&j.fornecedores.nome||'')}${j.estoque!=null?` · estoque ${j.estoque}`:''}</div></div>
+      <div style="flex:1"><strong>${escAttr(j.nome)}</strong><div class="muted" style="font-size:12px;">${escAttr(j.fornecedores&&j.fornecedores.nome||'')}${j.estoque!=null?` · <span style="${j.estoque<=0?'color:var(--danger);font-weight:600':''}">estoque ${j.estoque}${j.estoque<=0?' (acabou)':''}</span>`:''}</div></div>
       <div style="text-align:right;white-space:nowrap;"><strong>${j.preco_venda!=null?money(j.preco_venda):'—'}</strong><div class="muted" style="font-size:11px;">custo ${j.custo_compra!=null?money(j.custo_compra):'—'}${j.preco_venda!=null&&j.custo_compra!=null?` · lucro ${money(luc)}`:''}</div></div></div>`; }).join('') || '<div class="card center muted">Nenhuma joia cadastrada.</div>';
 }
 async function editarJoia(id){
@@ -479,7 +479,7 @@ async function editarJoia(id){
       <div style="flex:1"><label>Custo de compra (R$)</label><input id="jo-custo" inputmode="decimal" value="${f.custo_compra!=null?String(f.custo_compra).replace('.',','):''}"></div>
       <div style="flex:1"><label>Preço de venda (R$)</label><input id="jo-venda" inputmode="decimal" value="${f.preco_venda!=null?String(f.preco_venda).replace('.',','):''}"></div>
     </div>
-    <label>Estoque (unidades)</label><input id="jo-est" type="number" value="${f.estoque!=null?f.estoque:''}" placeholder="opcional">
+    <label>Estoque (unidades) — dá baixa sozinho quando entra num pedido</label><input id="jo-est" type="number" value="${f.estoque!=null?f.estoque:''}" placeholder="opcional">
     <label>Observação (grau, potência, tamanho...)</label><input id="jo-obs" value="${escAttr(f.observacao||'')}">
     <button class="btn block gold" style="margin-top:14px;" onclick="salvarJoia(${id?`'${id}'`:'null'})">Salvar</button>
     ${id?`<button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirProduto('${id}')">Excluir joia</button>`:''}
