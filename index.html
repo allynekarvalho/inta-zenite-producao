@@ -2114,7 +2114,7 @@ async function plImprimirA4(pessoaId){
     sb.from('fichas_tecnicas').select('id,nome').eq('tipo','servico').like('nome','%Nível%'),
     sb.from('precos_tabela').select('ficha_id,valor').eq('tabela', tabela)]);
   const pr = {}; (pt||[]).forEach(r => pr[r.ficha_id] = Number(r.valor));
-  const tipos = ['Avental','Colar','Faixa'], niv = {}; (sv||[]).forEach(f => { const m = f.nome.match(/^(.+?) · Nível (\d)/); if(m) (niv[m[1]] = niv[m[1]]||{})[m[2]] = pr[f.id]; });
+  const tipos = ['Avental','Colar','Faixa','Barrete'], niv = {}; (sv||[]).forEach(f => { const m = f.nome.match(/^(.+?) · Nível (\d)/); if(m) (niv[m[1]] = niv[m[1]]||{})[m[2]] = pr[f.id]; });
   const vv = (t,n) => (niv[t]&&niv[t][n]!=null) ? money(niv[t][n]) : '—';
   const tabNiveis = `<table class="niv"><tr><th></th><th>N1</th><th>N2</th><th>N3</th></tr>${tipos.map(t=>`<tr><td>${t}</td>${[1,2,3].map(n=>`<td>${vv(t,n)}</td>`).join('')}</tr>`).join('')}</table>`;
   // itens por mês
