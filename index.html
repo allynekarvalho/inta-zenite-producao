@@ -622,6 +622,10 @@ async function renderProdutos(){
     sb.from('tipos_peca').select('*').order('nome'),
   ]);
   window._prodPotencias = potencias||[];
+  const potSel = (potencias||[]).find(p => p.id === state.produtos.potenciaId);
+  if(!state.produtos.grupo) state.produtos.grupo = (potSel && potSel.grupo) || 'simbolica';
+  const grupoPot = state.produtos.grupo;
+  const potenciasGrupo = (potencias||[]).filter(p => !p.grupo || p.grupo === grupoPot);
   window._prodTipos = tipos||[];
 
   let ritos = [];
@@ -634,12 +638,13 @@ async function renderProdutos(){
   let html = `
     <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
     <h2 style="font-size:15px;">Potência</h2>
+    <div class="segmented" style="margin-bottom:10px;"><button class="${grupoPot==='simbolica'?'active':''}" onclick="trocarGrupoPotencia('simbolica')">Lojas Simbólicas</button><button class="${grupoPot==='filosofica'?'active':''}" onclick="trocarGrupoPotencia('filosofica')">Lojas Filosóficas</button></div>
     <div class="row">
       <input id="prod-busca-potencia" placeholder="Buscar ou digitar nova potência..." oninput="filtrarChips('prod-busca-potencia','prod-lista-potencia')">
       <button class="btn ghost sm" onclick="criarPotenciaProduto()">+ Adicionar</button>
     </div>
     <div id="prod-lista-potencia" class="chips">
-      ${chipsHtml(potencias, state.produtos.potenciaId, 'selecionarPotenciaProduto')}
+      ${chipsHtml(potenciasGrupo, state.produtos.potenciaId, 'selecionarPotenciaProduto')}
     </div>`;
 
   if(state.produtos.potenciaId){
@@ -693,6 +698,13 @@ async function renderProdutos(){
   }
 }
 
+function trocarGrupoPotencia(g){
+  if(state.produtos.grupo === g) return;
+  state.produtos.grupo = g;
+  const p = (window._prodPotencias||[]).find(x => x.id === state.produtos.potenciaId);
+  if(p && p.grupo && p.grupo !== g){ state.produtos.potenciaId = null; state.produtos.tipoId = null; state.produtos.ritoId = null; }
+  loadTab();
+}
 function selecionarPotenciaProduto(id){
   state.produtos.potenciaId = id;
   state.produtos.tipoId = null;
@@ -723,7 +735,7 @@ async function criarOuSelecionarCatalogo(tabela, nome, extraCols, listaExistente
 async function criarPotenciaProduto(){
   const nome = document.getElementById('prod-busca-potencia').value.trim();
   if(!nome) return;
-  await criarOuSelecionarCatalogo('potencias', nome, {}, window._prodPotencias, (id)=>{
+  await criarOuSelecionarCatalogo('potencias', nome, { grupo: state.produtos.grupo || 'simbolica' }, window._prodPotencias, (id)=>{
     state.produtos.potenciaId = id; state.produtos.tipoId = null; state.produtos.ritoId = null;
   });
   loadTab();
