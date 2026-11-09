@@ -43,6 +43,7 @@
   html{height:100%;}
   *{box-sizing:border-box;}
   html,body{overflow-x:hidden;}
+  input[type=date]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;box-sizing:border-box;display:block;}
   .card,.modal{overflow-wrap:anywhere;}
   body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:640px;margin:0 auto;padding:20px 16px 96px;}
@@ -601,11 +602,12 @@ async function salvarKitPedido(pedidoId){
   if(error){ document.getElementById('kp-msg').textContent = error.message; return; }
   closeModal(); abrirPedido(pedidoId);
 }
-async function npAbrirSeletorKit(){
-  npCapturarForm();
+async function npAbrirSeletorKit(kitId){
+  if(document.getElementById('np-prazo')) npCapturarForm();
   const { data } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome'); window._kitsCache = data||[];
   if(!window._kitsCache.length){ alert('Nenhum kit cadastrado. Crie em Produtos → Kits.'); return; }
   showModal(`<h2>Adicionar kit <button class="close" onclick="npMostrarForm()">&times;</button></h2>${kitModalHtml('npConfirmarKit()')}`);
+  if(kitId && document.getElementById('kp-kit')){ document.getElementById('kp-kit').value = kitId; document.getElementById('kp-kit').dispatchEvent(new Event('change')); }
 }
 async function npConfirmarKit(){
   const sel = document.getElementById('kp-kit'), q = Number(document.getElementById('kp-qtd').value)||1;
@@ -1250,8 +1252,10 @@ async function npAbrirSeletorPeca(){
   const { data: costureiras } = await sb.from('costureiras').select('*').eq('ativo', true).order('nome');
   const { data: faccionistas } = await sb.from('faccionistas').select('*').eq('ativo', true).order('nome');
   window._npFichasCache = fichas||[];
+  const { data: kitsNp } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome');
   showModal(`
     <h2>Adicionar peça <button class="close" onclick="npMostrarForm()">&times;</button></h2>
+    ${(kitsNp||[]).length ? `<label>📦 Kits</label><div class="chips">${kitsNp.map(k=>`<button class="chip" onclick="npAbrirSeletorKit('${k.id}')">📦 ${escAttr(k.nome)}</button>`).join('')}</div><label style="margin-top:12px;">Ou uma peça avulsa</label>` : ''}
     <label>Buscar tipo de peça</label>
     <input id="np2-busca" placeholder="Digite pra filtrar..." oninput="filtrarFichaPicker('np2-busca','np2-ficha-lista')">
     <input type="hidden" id="np2-ficha">
