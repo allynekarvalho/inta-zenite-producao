@@ -531,6 +531,10 @@ async function editarKit(kitId){
       <input id="kit-add-q" type="number" min="1" value="1" style="flex:1"><button class="btn sm" onclick="kitAddItem()">Adicionar</button></div>
     <div id="kit-itens" class="card" style="margin-top:8px;"></div>
     <label>Preço fechado do kit (R$) — cada kit</label><input id="kit-fixo" inputmode="decimal" placeholder="Ex.: 850,00 (deixe vazio para somar as peças)" value="${k.preco_fixo!=null?String(k.preco_fixo).replace('.',','):''}" oninput="kitRender()">
+    <div class="row" style="gap:8px;">
+      <div style="flex:1"><label>Preço atacado (cada kit)</label><input id="kit-atac" inputmode="decimal" placeholder="Ex.: 540,00" value="${k.preco_atacado!=null?String(k.preco_atacado).replace('.',','):''}" oninput="kitRender()"></div>
+      <div style="flex:1"><label>Atacado a partir de</label><input id="kit-atac-min" type="number" min="2" placeholder="Ex.: 10 kits" value="${k.atacado_min||''}" oninput="kitRender()"></div>
+    </div>
     <label>Desconto do kit (%)</label><input id="kit-desc" inputmode="decimal" value="${String(k.desconto_pct||0).replace('.',',')}" oninput="kitRender()">
     <div id="kit-total" class="card" style="margin-top:8px;"></div>
     <button class="btn block gold" style="margin-top:12px;" onclick="salvarKit(${kitId?`'${kitId}'`:'null'})">Salvar kit</button>
@@ -553,7 +557,9 @@ async function kitRender(){
   const d = fixo!=null ? 0 : (numBR(document.getElementById('kit-desc').value)||0), tot = fixo!=null ? fixo : sub*(1-d/100);
   const cs = await custosFichas(window._kitItens.map(i=>i.ficha_id)); const custo = window._kitItens.reduce((s,i)=>s+(cs[i.ficha_id]||0)*i.quantidade,0);
   const L = (a,b,bold)=>`<div style="display:flex;justify-content:space-between;${bold?'font-weight:700;font-size:16px;':''}"><span>${a}</span><span>${b}</span></div>`;
+  const atac = numBR(document.getElementById('kit-atac').value), amin = Number(document.getElementById('kit-atac-min').value)||0;
   tbox.innerHTML = L('Soma das peças', money(sub)) + (d?L(`Desconto ${d}%`, '− '+money(sub-tot)):'') + L('Preço do kit', money(tot), true) +
+    (atac!=null ? L(`Atacado${amin?` (a partir de ${amin})`:''}${tot>0?` · ${String(Math.round((1-atac/tot)*1000)/10).replace('.',',')}% off`:''}`, money(atac)) : '') +
     `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">${L('Custo do kit (Tabela 1)', money(custo))}${L('Lucro', money(tot-custo), true)}</div>` +
     (fixo==null && semPreco.length?`<div class="muted" style="font-size:12px;">Sem preço de venda: ${semPreco.map(escAttr).join(', ')} (coloque no produto)</div>`:'');
 }
@@ -563,10 +569,12 @@ async function salvarKit(kitId){
   if(!window._kitItens.length){ msg.textContent = 'Adicione as peças do kit.'; return; }
   const preco_fixo = numBR(document.getElementById('kit-fixo').value);
   const desconto_pct = preco_fixo!=null ? 0 : (numBR(document.getElementById('kit-desc').value)||0);
+  const preco_atacado = numBR(document.getElementById('kit-atac').value), atacado_min = Number(document.getElementById('kit-atac-min').value)||null;
+  if(preco_atacado!=null && !atacado_min){ msg.textContent = 'Informe a partir de quantos kits vale o atacado.'; return; }
   let id = kitId;
-  if(id){ const { error } = await sb.from('kits').update({ nome, desconto_pct, preco_fixo }).eq('id', id); if(error){ msg.textContent = error.message; return; }
+  if(id){ const { error } = await sb.from('kits').update({ nome, desconto_pct, preco_fixo, preco_atacado, atacado_min }).eq('id', id); if(error){ msg.textContent = error.message; return; }
     await sb.from('kit_itens').delete().eq('kit_id', id); }
-  else { const { data, error } = await sb.from('kits').insert({ nome, desconto_pct, preco_fixo }).select().single(); if(error){ msg.textContent = error.message; return; } id = data.id; }
+  else { const { data, error } = await sb.from('kits').insert({ nome, desconto_pct, preco_fixo, preco_atacado, atacado_min }).select().single(); if(error){ msg.textContent = error.message; return; } id = data.id; }
   const { error: e2 } = await sb.from('kit_itens').insert(window._kitItens.map(i => ({ kit_id: id, ficha_id: i.ficha_id, quantidade: i.quantidade })));
   if(e2){ msg.textContent = e2.message; return; }
   closeModal(); renderKits();
@@ -585,12 +593,16 @@ async function linhasDoKit(kitId, qtdKits, extra){
   const { data: k } = await sb.from('kits').select('*, kit_itens(ficha_id,quantidade, fichas_tecnicas(preco_venda,revenda))').eq('id', kitId).single();
   const grupo = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random());
   const out = [];
-  const fixos = k.preco_fixo!=null ? distribuirValorKit((k.kit_itens||[]).map(i => ({ q: Number(i.quantidade)||1, pv: i.fichas_tecnicas && i.fichas_tecnicas.preco_venda })), Number(k.preco_fixo)) : null;
+  const itensK = (k.kit_itens||[]).map(i => ({ q: Number(i.quantidade)||1, pv: i.fichas_tecnicas && i.fichas_tecnicas.preco_venda }));
+  const somaPV = itensK.reduce((s,i)=>s+(Number(i.pv)||0)*i.q,0), normal = k.preco_fixo!=null ? Number(k.preco_fixo) : (somaPV*(1-(Number(k.desconto_pct)||0)/100));
+  const ehAtacado = k.preco_atacado!=null && k.atacado_min && qtdKits >= k.atacado_min;
+  let fixos = k.preco_fixo!=null ? distribuirValorKit(itensK, Number(k.preco_fixo)) : null, descK = fixos ? 0 : (Number(k.desconto_pct)||0);
+  if(ehAtacado){ if(normal > 0){ fixos = distribuirValorKit(itensK, normal); descK = (1 - Number(k.preco_atacado)/normal)*100; } else { fixos = distribuirValorKit(itensK, Number(k.preco_atacado)); descK = 0; } }
   for(const [ix, i] of (k.kit_itens||[]).entries()){
     const nv = (i.fichas_tecnicas && i.fichas_tecnicas.revenda) ? null : await nivelDaPeca(i.ficha_id, !!extra.com_plastico);
     out.push({ ficha_id: i.ficha_id, quantidade: (Number(i.quantidade)||1)*qtdKits, dia_producao: extra.dia_producao||null,
       com_plastico: !!extra.com_plastico, servico_id: nv ? nv.servico_id : null,
-      valor_venda: fixos ? fixos[ix] : (i.fichas_tecnicas ? i.fichas_tecnicas.preco_venda : null), desconto_pct: fixos ? 0 : (Number(k.desconto_pct)||0),
+      valor_venda: fixos ? fixos[ix] : (i.fichas_tecnicas ? i.fichas_tecnicas.preco_venda : null), desconto_pct: descK,
       kit_id: kitId, kit_grupo: grupo, kit_qtd: qtdKits });
   }
   return out;
