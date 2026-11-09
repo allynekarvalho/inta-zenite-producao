@@ -278,7 +278,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 12:50</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 13:45</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -2064,10 +2064,10 @@ async function plRender(pessoaId){
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
   const apProd = abertos.filter(l=>l.ficha_id).reduce((s,l)=>s+tot(l),0), apSal = abertos.filter(l=>!l.ficha_id).reduce((s,l)=>s+tot(l),0);
   const apL = (a,b,st) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;${st||''}"><span>${a}</span><span>${b}</span></div>`;
-  let h = `<div class="card">${apSal ? apL('🧵 Produção (peças)', money(apProd)) + apL('💼 Salário e vales', money(apSal)) : ''}
+  let h = `<div class="card">${apSal ? apL('🧵 Produção (peças)', money(apProd)) + `<details><summary style="list-style:none;cursor:pointer;">${apL('💼 Salário e vales <span class="muted" style="font-size:11px;">ver ›</span>', money(apSal))}</summary><div style="font-size:13px;">${abertos.filter(l=>!l.ficha_id).map(l=>linha(l,true)).join('')}</div></details>` : ''}
     ${apL('<strong>A pagar</strong>', `<strong style="font-size:18px;${totAberto>0?'color:#c0392b':''}">${money(totAberto)}</strong>`, apSal ? 'border-top:1px solid var(--line, #2e3242);margin-top:4px;padding-top:8px;' : '')}</div>`;
   if(abertos.length) h += `<div style="display:flex;gap:8px;margin:8px 0;"><button class="btn ghost" style="flex:1" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button><button class="btn ghost" onclick="plImprimirA4('${pessoaId}')">🖨️ A4</button>${/leidis/i.test((window._plPessoa||{}).nome||'') ? `<button class="btn ghost" onclick="plWhats('${pessoaId}', true)">🇪🇸 Español</button>` : ''}</div>`;
-  h += abertos.length ? (apSal ? `<div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 2px;padding-bottom:4px;border-bottom:1px solid var(--line, #2e3242);"><strong style="font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--gold, #c4a574);">💼 Salário e vales</strong></div>` + abertos.filter(l=>!l.ficha_id).map(l=>linha(l,true)).join('') : '') + plPorMes(abertos.filter(l=>l.ficha_id), l=>linha(l,true)) + (abertos.length>0 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
+  h += abertos.length ? plPorMes(abertos.filter(l=>l.ficha_id), l=>linha(l,true)) + (abertos.length>0 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
   if(pagos.length){
     const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
     h += Object.keys(porMes).sort().reverse().map(m=>{ const ll=porMes[m], t=ll.reduce((s,l)=>s+tot(l),0), [y,mm]=m.split('-');
