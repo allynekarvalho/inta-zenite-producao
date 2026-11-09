@@ -134,6 +134,7 @@ let state = {
 
 const app = document.getElementById('app');
 
+function hojeISO(){ const d = new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
 function fmtDate(d){
   if(!d) return '';
   const [y,m,day] = d.split('-');
@@ -1149,7 +1150,7 @@ async function salvarEdicaoProduto(fichaId){
 async function renderPedidos(){
   const c = document.getElementById('content');
   const { data: pedidos, error } = await sb.from('pedidos')
-    .select('*, clientes(nome), pecas(id,status)')
+    .select('*, clientes(nome), pecas(id,status,valor_venda,quantidade,desconto_pct), pedido_pagamentos(valor)')
     .order('criado_em', { ascending: false });
 
   let html = `<button class="btn block" onclick="abrirNovoPedido()">+ Novo pedido</button><div style="height:14px;"></div>`;
@@ -1159,13 +1160,16 @@ async function renderPedidos(){
   html += pedidos.map(p => {
     const total = p.pecas?.length || 0;
     const prontos = p.pecas?.filter(x=>x.status==='pronto'||x.status==='entregue').length || 0;
+    const vt = (p.pecas||[]).reduce((s,x)=>s+vendaLinha(x),0), vp = (p.pedido_pagamentos||[]).reduce((s,x)=>s+Number(x.valor||0),0), vf = vt - vp;
+    const pagTxt = vt>0 ? (vf>0.009 ? `<span style="color:var(--danger);">falta ${money(vf)}</span>` : '<span style="color:var(--success,#3a9a5b);">✅ pago</span>') : '';
     return `
     <div class="card" onclick="abrirPedido('${p.id}')" style="cursor:pointer;">
       <div style="display:flex;justify-content:space-between;">
         <strong>#${p.numero} · ${p.clientes?.nome || ''}</strong>
         ${p.urgente ? '<span class="pill urgente">Urgente</span>' : ''}
       </div>
-      <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas</div>
+      <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas${vt>0?` · ${money(vt)}`:''}</div>
+      ${pagTxt?`<div style="font-size:13px;margin-top:2px;">${pagTxt}</div>`:''}
     </div>`;
   }).join('');
   c.innerHTML = html;
@@ -1198,6 +1202,10 @@ async function npMostrarForm(){
     </div>
     <label>Prazo</label>
     <input type="date" id="np-prazo" value="${npFormCache?.prazo||''}">
+    <div class="row" style="gap:8px;">
+      <div style="flex:1"><label>Forma de pagamento</label><select id="np-forma">${formasPagHtml(npFormCache?.forma||'')}</select></div>
+      <div style="flex:1"><label>Sinal recebido (R$)</label><input id="np-sinal" inputmode="decimal" placeholder="0,00" value="${npFormCache?.sinal||''}"></div>
+    </div>
 
     <p class="muted" style="margin-top:8px; display:${(npFormCache?.urgente || npFormCache?.obs) ? 'none' : 'block'};" id="np-toggle-detalhes-wrap"><a href="#" onclick="event.preventDefault(); document.getElementById('np-detalhes').style.display='block'; document.getElementById('np-toggle-detalhes-wrap').style.display='none';">+ mais detalhes (urgente, observações)</a></p>
     <div id="np-detalhes" style="display:${(npFormCache?.urgente || npFormCache?.obs) ? 'block' : 'none'};">
@@ -1277,6 +1285,7 @@ function npCapturarForm(){
     clienteTipo: document.getElementById('np-cliente-tipo').value,
     prazo: document.getElementById('np-prazo').value,
     urgente: document.getElementById('np-urgente').checked,
+    forma: document.getElementById('np-forma').value, sinal: document.getElementById('np-sinal').value,
     obs: document.getElementById('np-obs').value,
   };
 }
@@ -1412,8 +1421,10 @@ async function salvarNovoPedido(){
   const prazo = document.getElementById('np-prazo').value || null;
   const urgente = document.getElementById('np-urgente').checked;
   const observacao = document.getElementById('np-obs').value;
-  const { data, error } = await sb.from('pedidos').insert({ cliente_id: clienteId, prazo, urgente, observacao }).select().single();
+  const forma_pagamento = document.getElementById('np-forma').value || null, sinal = numBR(document.getElementById('np-sinal').value);
+  const { data, error } = await sb.from('pedidos').insert({ cliente_id: clienteId, prazo, urgente, observacao, forma_pagamento }).select().single();
   if(error){ msg.textContent = error.message; return; }
+  if(sinal > 0) await sb.from('pedido_pagamentos').insert({ pedido_id: data.id, valor: sinal, forma: forma_pagamento, obs: 'Sinal' });
 
   if(npPecas.length){
     const kitLinhas = [];
@@ -1516,6 +1527,41 @@ async function removerKitPedido(grupo, pedidoId){
   if(error){ alert(error.message); return; }
   closeModal(); abrirPedido(pedidoId);
 }
+const FORMAS_PAG = ['Pix','Dinheiro','Cartão de crédito','Cartão de débito','Boleto','Transferência'];
+function formasPagHtml(sel){ return `<option value="">—</option>` + FORMAS_PAG.map(f=>`<option ${f===sel?'selected':''}>${f}</option>`).join(''); }
+async function pedidoPagRender(pedido, total){
+  const div = document.getElementById('pedido-pag'); if(!div) return;
+  const { data: pg } = await sb.from('pedido_pagamentos').select('*').eq('pedido_id', pedido.id).order('data');
+  const pago = (pg||[]).reduce((s,x)=>s+Number(x.valor||0),0), falta = Math.max(0, total - pago);
+  const L = (a,b,st)=>`<div style="display:flex;justify-content:space-between;${st||''}"><span>${a}</span><span>${b}</span></div>`;
+  div.innerHTML = `<strong>💳 Pagamento</strong>
+    <label style="margin-top:6px;">Forma combinada</label><select onchange="sb.from('pedidos').update({ forma_pagamento: this.value||null }).eq('id','${pedido.id}')">${formasPagHtml(pedido.forma_pagamento||'')}</select>
+    ${(pg||[]).map(x=>`<div class="item" style="gap:6px;"><span style="flex:1">${fmtDate(x.data)} · ${escAttr(x.forma||'—')}${x.obs?` · <span class="muted">${escAttr(x.obs)}</span>`:''}</span><strong>${money(x.valor)}</strong><button class="btn sm ghost" style="color:var(--danger);" onclick="excluirPagPedido('${x.id}','${pedido.id}')">✕</button></div>`).join('')}
+    <div style="margin-top:8px;">${L('Total do pedido', money(total))}${L('Recebido', money(pago), 'color:var(--success, #3a9a5b);')}${L(falta>0.009?'Falta receber':'✅ Pago', money(falta), 'font-weight:700;font-size:16px;'+(falta>0.009?'color:var(--danger);':''))}</div>
+    <button class="btn block" style="margin-top:8px;" onclick="registrarPagPedido('${pedido.id}', ${falta.toFixed(2)}, '${escAttr(pedido.forma_pagamento||'')}')">+ Registrar pagamento</button>`;
+}
+function registrarPagPedido(pedidoId, falta, forma){
+  const box = document.getElementById('pedido-pag');
+  box.insertAdjacentHTML('beforeend', `<div id="pp-form" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+    <div class="row" style="gap:8px;"><div style="flex:1"><label>Valor (R$)</label><input id="pp-valor" inputmode="decimal" value="${falta>0?String(falta).replace('.',','):''}"></div>
+    <div style="flex:1"><label>Data</label><input type="date" id="pp-data" value="${hojeISO()}"></div></div>
+    <label>Forma</label><select id="pp-forma">${formasPagHtml(forma)}</select>
+    <label>Observação</label><input id="pp-obs" placeholder="Ex.: sinal, 2ª parcela...">
+    <button class="btn block gold" style="margin-top:8px;" onclick="salvarPagPedido('${pedidoId}')">Salvar pagamento</button></div>`);
+  const b = box.querySelector('button.btn.block:not(.gold)'); if(b) b.style.display='none';
+}
+async function salvarPagPedido(pedidoId){
+  const valor = numBR(document.getElementById('pp-valor').value);
+  if(!(valor > 0)){ alert('Informe o valor.'); return; }
+  const { error } = await sb.from('pedido_pagamentos').insert({ pedido_id: pedidoId, valor, data: document.getElementById('pp-data').value || hojeISO(),
+    forma: document.getElementById('pp-forma').value || null, obs: document.getElementById('pp-obs').value.trim() || null });
+  if(error){ alert(error.message); return; }
+  abrirPedido(pedidoId);
+}
+async function excluirPagPedido(id, pedidoId){
+  if(!confirm('Excluir este pagamento?')) return;
+  await sb.from('pedido_pagamentos').delete().eq('id', id); abrirPedido(pedidoId);
+}
 function pedidoValoresRender(pedido, pecas){
   const div = document.getElementById('pedido-valores'); if(!div) return;
   const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), liq = pecas.reduce((s,p)=>s+vendaLinha(p),0);
@@ -1524,6 +1570,7 @@ function pedidoValoresRender(pedido, pecas){
   div.innerHTML = `<strong>💰 Valores</strong>` + L('Soma das peças', money(bruto)) + (bruto-liq>0.009?L('Desconto dos kits', '− '+money(bruto-liq)):'') + L('Total do pedido', money(liq), true) +
     (semPreco?`<div class="muted" style="font-size:12px;">${semPreco} peça(s) sem preço de venda (coloque no produto ou em Editar da peça)</div>`:'') +
     `<div id="pedido-lucro" class="muted" style="font-size:13px;margin-top:6px;"></div>`;
+  pedidoPagRender(pedido, liq);
   custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0); const el = document.getElementById('pedido-lucro'); if(el) el.innerHTML = `Custo estimado ${money(custo)} · <b>Lucro ${money(liq-custo)}</b>`; });
 }
 async function abrirPedido(id){
@@ -1540,6 +1587,7 @@ async function abrirPedido(id){
     <h2 style="font-size:15px;margin-top:18px;">Peças</h2>
     <div id="pedido-pecas">${pedidoPecasHtml(pecas||[], id)}</div>
     <div id="pedido-valores" class="card" style="margin-top:12px;"></div>
+    <div id="pedido-pag" class="card" style="margin-top:10px;"></div>
     <div class="row" style="gap:8px;margin-top:14px;"><button class="btn" style="flex:1" onclick="adicionarPeca('${id}')">+ Adicionar peça</button><button class="btn" style="flex:1" onclick="adicionarKitPedido('${id}')">📦 Adicionar kit</button></div>
     <details style="margin-top:16px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🪡 Bordados deste pedido</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🧵 Materiais deste pedido</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
