@@ -278,7 +278,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 13:45</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 14:05</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -2116,7 +2116,7 @@ async function plImprimirA4(pessoaId){
   const pr = {}; (pt||[]).forEach(r => pr[r.ficha_id] = Number(r.valor));
   const tipos = ['Avental','Colar','Faixa'], niv = {}; (sv||[]).forEach(f => { const m = f.nome.match(/^(.+?) · Nível (\d)/); if(m) (niv[m[1]] = niv[m[1]]||{})[m[2]] = pr[f.id]; });
   const vv = (t,n) => (niv[t]&&niv[t][n]!=null) ? money(niv[t][n]) : '—';
-  const tabNiveis = `<table class="niv"><tr><th></th>${tipos.map(t=>`<th>${t}</th>`).join('')}</tr>${[1,2,3].map(n=>`<tr><td><b>Nível ${n}</b></td>${tipos.map(t=>`<td>${vv(t,n)}</td>`).join('')}</tr>`).join('')}</table>`;
+  const tabNiveis = `<table class="niv"><tr><th></th><th>N1</th><th>N2</th><th>N3</th></tr>${tipos.map(t=>`<tr><td>${t}</td>${[1,2,3].map(n=>`<td>${vv(t,n)}</td>`).join('')}</tr>`).join('')}</table>`;
   // itens por mês
   const prod = itens.filter(l => l.ficha_id), sal = itens.filter(l => !l.ficha_id);
   const totProd = prod.reduce((s,l)=>s+tot(l),0), totSal = sal.reduce((s,l)=>s+tot(l),0);
@@ -2126,26 +2126,19 @@ async function plImprimirA4(pessoaId){
     return `<tr class="mes"><td colspan="3">${(PL_MESES[Number(mm)-1]||'').toUpperCase()}/${y}</td><td class="v">${money(t)}</td></tr>` +
       g[m].map(l => `<tr><td>${esc(String(l.produto||'').replace(/ · [a-z]{3}\/\d{2}$/,''))}</td><td class="c">${l.quantidade}</td><td class="v">${money(l.valor_unit)}</td><td class="v"><b>${money(tot(l))}</b></td></tr>`).join(''); }).join('');
   const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Produção · ${esc(p.nome||'')}</title><style>
-    @page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#111;margin:0;font-size:12.5px}
-    .top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #c4a574;padding-bottom:8px;margin-bottom:14px}
-    .top small{color:#8a6d3b;font-weight:700;letter-spacing:1px}.top h1{margin:2px 0 0;font-size:24px;font-family:Georgia,serif}
-    h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 6px;color:#8a6d3b}
-    .box{border:1px solid #ddd;border-radius:8px;padding:10px 12px}.box p{margin:3px 0}
-    table{width:100%;border-collapse:collapse}td,th{padding:6px 6px;border-bottom:1px solid #e3e3e3;text-align:left}th{font-size:11px;color:#666;text-transform:uppercase}
+    @page{size:A4;margin:10mm}body{font-family:Arial,sans-serif;color:#111;margin:0;font-size:11px}
+    .top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #c4a574;padding-bottom:4px;margin-bottom:8px}
+    .top small{color:#8a6d3b;font-weight:700;letter-spacing:1px}.top h1{margin:0;font-size:19px;font-family:Georgia,serif}
+    h2{font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin:9px 0 3px;color:#8a6d3b}
+    .box{border:1px solid #ddd;border-radius:6px;padding:5px 8px}.nivbox{display:flex;gap:10px;align-items:center;font-size:9.5px}.nivtxt{flex:1;line-height:1.4}.niv{width:auto}.niv td,.niv th{padding:1px 6px;font-size:9.5px;border:0}
+    table{width:100%;border-collapse:collapse;font-size:10.5px}td,th{padding:2px 5px;border-bottom:1px solid #eee;text-align:left}th{font-size:9px;color:#666;text-transform:uppercase}
     .niv td,.niv th{text-align:center}.niv td:first-child{text-align:left}.v{text-align:right;white-space:nowrap}.c{text-align:center}
-    .mes td{background:#f5efe4;font-weight:700;font-size:11.5px;letter-spacing:.5px}
-    .tot{display:flex;justify-content:space-between;margin-top:10px;padding:10px 12px;border:2px solid #111;border-radius:8px;font-size:16px;font-weight:700}
-    .ass{display:flex;gap:40px;margin-top:46px}.ass div{flex:1;border-top:1px solid #111;padding-top:4px;text-align:center;font-size:11px}
+    .mes td{background:#f5efe4;font-weight:700;font-size:10px;letter-spacing:.5px}
+    .tot{display:flex;justify-content:space-between;margin-top:8px;padding:6px 10px;border:2px solid #111;border-radius:6px;font-size:14px;font-weight:700}
+    .ass{display:flex;gap:40px;margin-top:24px}.ass div{flex:1;border-top:1px solid #111;padding-top:4px;text-align:center;font-size:11px}
   </style></head><body>
     <div class="top"><div><small>ZÊNITE · PRODUÇÃO</small><h1>${esc(p.nome||'')}</h1></div><div>${new Date().toLocaleDateString('pt-BR')}${window._plTipo==='costureiras'?` · Tabela ${tabela}`:''}</div></div>
-    <h2>Como funcionam os níveis de costura</h2>
-    <div class="box">
-      <p><b>Nível 1 — Peça simples:</b> sem metais maçônicos e sem plástico.</p>
-      <p><b>Nível 2 — Peça com detalhe:</b> tem metais maçônicos <u>ou</u> tem plástico.</p>
-      <p><b>Nível 3 — Peça completa:</b> tem metais maçônicos <u>e</u> plástico.</p>
-      <div style="margin-top:8px">${tabNiveis}</div>
-      <p style="margin-top:6px;color:#666;font-size:11px">Valor pago por peça costurada, de acordo com o nível.</p>
-    </div>
+    <div class="box nivbox"><div class="nivtxt"><b>Níveis de costura</b><br><b>N1</b> simples (sem metal e sem plástico) · <b>N2</b> metal <u>ou</u> plástico · <b>N3</b> metal <u>e</u> plástico</div>${tabNiveis}</div>
     ${salHtml}
     <h2>Produção (peças costuradas)</h2>
     <table><tr><th>Peça</th><th class="c">Qtd</th><th class="v">Valor un.</th><th class="v">Total</th></tr>${corpo || '<tr><td colspan="4">Nenhuma peça a pagar.</td></tr>'}${prod.length&&sal.length?`<tr class="mes"><td colspan="3">Subtotal produção</td><td class="v">${money(totProd)}</td></tr>`:''}</table>
