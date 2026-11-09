@@ -694,6 +694,8 @@ function listaMateriaisHtml(prefix, outrosAviamentos){
       <option value="">— sem mão de obra —</option>
       ${(window._servicos||[]).map(sv=>`<option value="${sv.id}" ${((window._pmServ||{})[prefix]===sv.id)?'selected':''}>${escAttr(sv.nome)}</option>`).join('')}
     </select>
+    <label>✂️ Corte (R$ por peça, se paga alguém para cortar)</label>
+    <input id="${prefix}-corte" inputmode="decimal" placeholder="0,00" value="${((window._pmCorteVal||{})[prefix])!=null ? String(window._pmCorteVal[prefix]).replace('.',',') : ''}" oninput="window._pmCorteVal=window._pmCorteVal||{}; window._pmCorteVal['${prefix}']=this.value.trim()===''?null:(Number(this.value.replace(/\./g,'').replace(',','.'))||0); atualizarCustoProduto('${prefix}')">
     <div class="card" id="${prefix}-custo" style="margin-top:10px;">${custoProdutoHtml(prefix)}</div>
     <label style="margin-top:12px;">Outras observações</label>
     <textarea id="${prefix}-outros_aviamentos" rows="2" placeholder="Qualquer outro detalhe...">${(outrosAviamentos||'').replace(/</g,'&lt;')}</textarea>
@@ -723,6 +725,7 @@ async function novoProdutoCompleto(){
   await carregarMateriaisCategorias();
   window._pmSel['npf'] = {}; window._pmCorte = window._pmCorte || {}; window._pmCorte['npf'] = {};
   window._pmServ = window._pmServ || {}; window._pmServ['npf'] = null; await carregarServicos();
+  window._pmCorteVal = window._pmCorteVal || {}; window._pmCorteVal['npf'] = null;
   const potNome = (window._prodPotencias||[]).find(p=>p.id===state.produtos.potenciaId)?.nome || '';
   const tipoNome = (window._prodTipos||[]).find(t=>t.id===state.produtos.tipoId)?.nome || '';
   const ritoNome = (window._prodRitos||[]).find(r=>r.id===state.produtos.ritoId)?.nome || '';
@@ -756,6 +759,7 @@ async function salvarProdutoCompleto(){
     cargo_id: state.produtos.cargoId || null,
     outros_aviamentos: document.getElementById('npf-outros_aviamentos').value.trim() || null,
     servico_id: (window._pmServ||{})['npf'] || null,
+    custo_corte: (window._pmCorteVal||{})['npf'] ?? null,
   };
   const { data, error } = await sb.from('fichas_tecnicas').insert(payload).select().single();
   if(error){ msg.textContent = error.message; return; }
@@ -777,6 +781,7 @@ async function abrirProduto(fichaId){
   window._pmSel['epf'] = {}; window._pmCorte = window._pmCorte || {}; window._pmCorte['epf'] = {};
   (fm||[]).forEach(r => { window._pmSel['epf'][r.material_id] = r.quantidade_por_unidade; if(r.corte) window._pmCorte['epf'][r.material_id] = Number(r.corte); });
   window._pmServ = window._pmServ || {}; window._pmServ['epf'] = f.servico_id || null;
+  window._pmCorteVal = window._pmCorteVal || {}; window._pmCorteVal['epf'] = f.custo_corte!=null ? Number(f.custo_corte) : null;
   const fotos = (f.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
   const [{ data: bdi }, { data: bds }] = await Promise.all([
     sb.from('fichas_tecnicas').select('id,nome,custo_bordado').like('nome', 'Bordado · %').eq('ativo', true).order('nome'),
@@ -835,6 +840,7 @@ async function salvarEdicaoProduto(fichaId){
     unidade_producao: document.getElementById('epf-unidade').value.trim() || 'peça',
     outros_aviamentos: document.getElementById('epf-outros_aviamentos').value.trim() || null,
     servico_id: (window._pmServ||{})['epf'] || null,
+    custo_corte: (window._pmCorteVal||{})['epf'] ?? null,
   };
   const { error } = await sb.from('fichas_tecnicas').update(patch).eq('id', fichaId);
   if(error){ msg.textContent = error.message; return; }
@@ -1730,6 +1736,8 @@ function custoProdutoHtml(prefix){
     (semPreco.length ? `<div class="muted" style="font-size:12px;margin-top:4px;">Sem preço cadastrado: ${semPreco.join(', ')}</div>` : '');
   if(bord || bordSem.length) h += lin('🪡 Bordado', money(bord)) + (bordSem.length ? `<div class="muted" style="font-size:12px;">Bordado sem custo: ${bordSem.join(', ')}</div>` : '');
   tot += bord;
+  const corte = Number((window._pmCorteVal||{})[prefix])||0;
+  if(corte) { h += lin('✂️ Corte', money(corte)); tot += corte; }
   if(sid && (pr[1]!=null || pr[2]!=null)){
     h += `<div style="border-top:1px solid var(--line, #2e3242);margin-top:10px;padding-top:8px;">`;
     if(pr[1]!=null) h += lin('🧵 Mão de obra · Tabela 1', money(pr[1])) + lin('= Custo total · Tabela 1', money(tot+pr[1]), true);
