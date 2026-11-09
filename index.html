@@ -444,11 +444,70 @@ async function custosFichas(ids){
   });
   return out;
 }
+async function renderJoias(){
+  const c = document.getElementById('content');
+  const { data: js } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem), fornecedores(nome)').eq('ativo', true).eq('revenda', true).order('nome');
+  window._joiasCache = js||[];
+  c.innerHTML = `
+    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button><button class="active">💎 Joias</button></div>
+    <button class="btn block gold" onclick="editarJoia()">+ Nova joia</button>
+    <input id="jo-busca" placeholder="🔍 Buscar joia..." style="margin-top:10px;" oninput="filtrarJoias()">
+    <div id="jo-lista"></div>`;
+  filtrarJoias();
+}
+function filtrarJoias(){
+  const q = (document.getElementById('jo-busca')||{}).value?.toLowerCase().trim() || '';
+  const l = (window._joiasCache||[]).filter(j => !q || [j.nome, j.fornecedores&&j.fornecedores.nome, j.observacao].filter(Boolean).join(' ').toLowerCase().includes(q));
+  document.getElementById('jo-lista').innerHTML = l.map(j => { const luc = (Number(j.preco_venda)||0) - (Number(j.custo_compra)||0);
+    return `<div class="card" style="cursor:pointer;display:flex;gap:10px;align-items:center;" onclick="editarJoia('${j.id}')">${fichaThumbImg(j, 52)}
+      <div style="flex:1"><strong>${escAttr(j.nome)}</strong><div class="muted" style="font-size:12px;">${escAttr(j.fornecedores&&j.fornecedores.nome||'')}${j.estoque!=null?` · estoque ${j.estoque}`:''}</div></div>
+      <div style="text-align:right;white-space:nowrap;"><strong>${j.preco_venda!=null?money(j.preco_venda):'—'}</strong><div class="muted" style="font-size:11px;">custo ${j.custo_compra!=null?money(j.custo_compra):'—'}${j.preco_venda!=null&&j.custo_compra!=null?` · lucro ${money(luc)}`:''}</div></div></div>`; }).join('') || '<div class="card center muted">Nenhuma joia cadastrada.</div>';
+}
+async function editarJoia(id){
+  const [{ data: j }, { data: forn }] = await Promise.all([
+    id ? sb.from('fichas_tecnicas').select('*, ficha_fotos(*)').eq('id', id).single() : Promise.resolve({ data: {} }),
+    sb.from('fornecedores').select('id,nome').order('nome')]);
+  const f = j || {}, foto = fichaThumbUrl(f);
+  showModal(`<h2>${id?'Editar joia':'Nova joia'} <button class="close" onclick="closeModal()">&times;</button></h2>
+    ${foto?`<img src="${foto}" class="foto-thumb" style="width:90px;height:90px;">`:''}
+    <label>Foto</label><input type="file" id="jo-foto" accept="image/*">
+    <label>Nome</label><input id="jo-nome" value="${escAttr(f.nome||'')}" placeholder="Ex.: Joia Grau 33 Supremo Conclave">
+    <label>Fornecedor (empresa que faz)</label>
+    <select id="jo-forn"><option value="">—</option>${(forn||[]).map(x=>`<option value="${x.id}" ${f.fornecedor_id===x.id?'selected':''}>${escAttr(x.nome)}</option>`).join('')}<option value="__novo">+ novo fornecedor</option></select>
+    <input id="jo-forn-novo" placeholder="Nome do novo fornecedor" style="display:none;margin-top:6px;">
+    <div class="row" style="gap:8px;">
+      <div style="flex:1"><label>Custo de compra (R$)</label><input id="jo-custo" inputmode="decimal" value="${f.custo_compra!=null?String(f.custo_compra).replace('.',','):''}"></div>
+      <div style="flex:1"><label>Preço de venda (R$)</label><input id="jo-venda" inputmode="decimal" value="${f.preco_venda!=null?String(f.preco_venda).replace('.',','):''}"></div>
+    </div>
+    <label>Estoque (unidades)</label><input id="jo-est" type="number" value="${f.estoque!=null?f.estoque:''}" placeholder="opcional">
+    <label>Observação (grau, potência, tamanho...)</label><input id="jo-obs" value="${escAttr(f.observacao||'')}">
+    <button class="btn block gold" style="margin-top:14px;" onclick="salvarJoia(${id?`'${id}'`:'null'})">Salvar</button>
+    ${id?`<button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirProduto('${id}')">Excluir joia</button>`:''}
+    <p id="jo-msg" class="error"></p>`);
+  document.getElementById('jo-forn').onchange = (e) => { document.getElementById('jo-forn-novo').style.display = e.target.value==='__novo' ? 'block' : 'none'; };
+}
+async function salvarJoia(id){
+  const msg = document.getElementById('jo-msg'), nome = document.getElementById('jo-nome').value.trim();
+  if(!nome){ msg.textContent = 'Informe o nome.'; return; }
+  let fornecedor_id = document.getElementById('jo-forn').value || null;
+  if(fornecedor_id === '__novo'){ const n = document.getElementById('jo-forn-novo').value.trim(); fornecedor_id = null;
+    if(n){ const { data } = await sb.from('fornecedores').insert({ nome: n }).select().single(); fornecedor_id = data && data.id; } }
+  const est = document.getElementById('jo-est').value;
+  const patch = { nome, revenda: true, tipo: 'produto', unidade_producao: 'peça', fornecedor_id,
+    custo_compra: numBR(document.getElementById('jo-custo').value), preco_venda: numBR(document.getElementById('jo-venda').value),
+    estoque: est==='' ? null : Number(est), observacao: document.getElementById('jo-obs').value.trim() || null };
+  let fid = id;
+  if(id){ const { error } = await sb.from('fichas_tecnicas').update(patch).eq('id', id); if(error){ msg.textContent = error.message; return; } }
+  else { const { data, error } = await sb.from('fichas_tecnicas').insert({ ...patch, ativo: true }).select().single(); if(error){ msg.textContent = error.message; return; } fid = data.id; }
+  const file = document.getElementById('jo-foto').files[0];
+  if(file){ const { error: fe } = await uploadFotoFicha(fid, file); if(fe){ msg.textContent = 'Salvo, mas a foto falhou: '+fe.message; return; } }
+  closeModal(); renderJoias();
+}
 async function renderKits(){
   const c = document.getElementById('content');
   const { data: kits } = await sb.from('kits').select('*, kit_itens(quantidade, fichas_tecnicas(id,nome,preco_venda))').eq('ativo', true).order('nome');
   c.innerHTML = `
-    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button class="active">📦 Kits</button></div>
+    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button class="active">📦 Kits</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
     <button class="btn block gold" onclick="editarKit()">+ Novo kit</button>
     <div style="height:10px;"></div>
     ${(kits||[]).map(k => { const sub = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.quantidade)||0)*(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0),0), tot = sub*(1-(Number(k.desconto_pct)||0)/100);
@@ -554,6 +613,7 @@ async function npConfirmarKit(){
 }
 async function renderProdutos(){
   if(state.produtos && state.produtos.aba === 'kits') return renderKits();
+  if(state.produtos && state.produtos.aba === 'joias') return renderJoias();
   const c = document.getElementById('content');
   const [{ data: potencias }, { data: tipos }] = await Promise.all([
     sb.from('potencias').select('*').order('nome'),
@@ -570,7 +630,7 @@ async function renderProdutos(){
   window._prodRitos = ritos;
 
   let html = `
-    <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button></div>
+    <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
     <h2 style="font-size:15px;">Potência</h2>
     <div class="row">
       <input id="prod-busca-potencia" placeholder="Buscar ou digitar nova potência..." oninput="filtrarChips('prod-busca-potencia','prod-lista-potencia')">
