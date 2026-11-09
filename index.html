@@ -531,10 +531,6 @@ async function editarKit(kitId){
       <input id="kit-add-q" type="number" min="1" value="1" style="flex:1"><button class="btn sm" onclick="kitAddItem()">Adicionar</button></div>
     <div id="kit-itens" class="card" style="margin-top:8px;"></div>
     <label>Preço fechado do kit (R$) — cada kit</label><input id="kit-fixo" inputmode="decimal" placeholder="Ex.: 850,00 (deixe vazio para somar as peças)" value="${k.preco_fixo!=null?String(k.preco_fixo).replace('.',','):''}" oninput="kitRender()">
-    <div class="row" style="gap:8px;">
-      <div style="flex:1"><label>Preço atacado (cada kit)</label><input id="kit-atac" inputmode="decimal" placeholder="Ex.: 540,00" value="${k.preco_atacado!=null?String(k.preco_atacado).replace('.',','):''}" oninput="kitRender()"></div>
-      <div style="flex:1"><label>Atacado a partir de</label><input id="kit-atac-min" type="number" min="2" placeholder="Ex.: 10 kits" value="${k.atacado_min||''}" oninput="kitRender()"></div>
-    </div>
     <label>Desconto do kit (%)</label><input id="kit-desc" inputmode="decimal" value="${String(k.desconto_pct||0).replace('.',',')}" oninput="kitRender()">
     <div id="kit-total" class="card" style="margin-top:8px;"></div>
     <button class="btn block gold" style="margin-top:12px;" onclick="salvarKit(${kitId?`'${kitId}'`:'null'})">Salvar kit</button>
@@ -557,9 +553,7 @@ async function kitRender(){
   const d = fixo!=null ? 0 : (numBR(document.getElementById('kit-desc').value)||0), tot = fixo!=null ? fixo : sub*(1-d/100);
   const cs = await custosFichas(window._kitItens.map(i=>i.ficha_id)); const custo = window._kitItens.reduce((s,i)=>s+(cs[i.ficha_id]||0)*i.quantidade,0);
   const L = (a,b,bold)=>`<div style="display:flex;justify-content:space-between;${bold?'font-weight:700;font-size:16px;':''}"><span>${a}</span><span>${b}</span></div>`;
-  const atac = numBR(document.getElementById('kit-atac').value), amin = Number(document.getElementById('kit-atac-min').value)||0;
   tbox.innerHTML = L('Soma das peças', money(sub)) + (d?L(`Desconto ${d}%`, '− '+money(sub-tot)):'') + L('Preço do kit', money(tot), true) +
-    (atac!=null ? L(`Atacado${amin?` (a partir de ${amin})`:''}${tot>0?` · ${String(Math.round((1-atac/tot)*1000)/10).replace('.',',')}% off`:''}`, money(atac)) : '') +
     `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">${L('Custo do kit (Tabela 1)', money(custo))}${L('Lucro', money(tot-custo), true)}</div>` +
     (fixo==null && semPreco.length?`<div class="muted" style="font-size:12px;">Sem preço de venda: ${semPreco.map(escAttr).join(', ')} (coloque no produto)</div>`:'');
 }
@@ -569,12 +563,10 @@ async function salvarKit(kitId){
   if(!window._kitItens.length){ msg.textContent = 'Adicione as peças do kit.'; return; }
   const preco_fixo = numBR(document.getElementById('kit-fixo').value);
   const desconto_pct = preco_fixo!=null ? 0 : (numBR(document.getElementById('kit-desc').value)||0);
-  const preco_atacado = numBR(document.getElementById('kit-atac').value), atacado_min = Number(document.getElementById('kit-atac-min').value)||null;
-  if(preco_atacado!=null && !atacado_min){ msg.textContent = 'Informe a partir de quantos kits vale o atacado.'; return; }
   let id = kitId;
-  if(id){ const { error } = await sb.from('kits').update({ nome, desconto_pct, preco_fixo, preco_atacado, atacado_min }).eq('id', id); if(error){ msg.textContent = error.message; return; }
+  if(id){ const { error } = await sb.from('kits').update({ nome, desconto_pct, preco_fixo }).eq('id', id); if(error){ msg.textContent = error.message; return; }
     await sb.from('kit_itens').delete().eq('kit_id', id); }
-  else { const { data, error } = await sb.from('kits').insert({ nome, desconto_pct, preco_fixo, preco_atacado, atacado_min }).select().single(); if(error){ msg.textContent = error.message; return; } id = data.id; }
+  else { const { data, error } = await sb.from('kits').insert({ nome, desconto_pct, preco_fixo }).select().single(); if(error){ msg.textContent = error.message; return; } id = data.id; }
   const { error: e2 } = await sb.from('kit_itens').insert(window._kitItens.map(i => ({ kit_id: id, ficha_id: i.ficha_id, quantidade: i.quantidade })));
   if(e2){ msg.textContent = e2.message; return; }
   closeModal(); renderKits();
@@ -595,9 +587,9 @@ async function linhasDoKit(kitId, qtdKits, extra){
   const out = [];
   const itensK = (k.kit_itens||[]).map(i => ({ q: Number(i.quantidade)||1, pv: i.fichas_tecnicas && i.fichas_tecnicas.preco_venda }));
   const somaPV = itensK.reduce((s,i)=>s+(Number(i.pv)||0)*i.q,0), normal = k.preco_fixo!=null ? Number(k.preco_fixo) : (somaPV*(1-(Number(k.desconto_pct)||0)/100));
-  const ehAtacado = k.preco_atacado!=null && k.atacado_min && qtdKits >= k.atacado_min;
   let fixos = k.preco_fixo!=null ? distribuirValorKit(itensK, Number(k.preco_fixo)) : null, descK = fixos ? 0 : (Number(k.desconto_pct)||0);
-  if(ehAtacado){ if(normal > 0){ fixos = distribuirValorKit(itensK, normal); descK = (1 - Number(k.preco_atacado)/normal)*100; } else { fixos = distribuirValorKit(itensK, Number(k.preco_atacado)); descK = 0; } }
+  const dHora = Number(extra.desconto)||0;
+  if(dHora > 0 && normal > 0){ fixos = distribuirValorKit(itensK, normal); descK = dHora; }
   for(const [ix, i] of (k.kit_itens||[]).entries()){
     const nv = (i.fichas_tecnicas && i.fichas_tecnicas.revenda) ? null : await nivelDaPeca(i.ficha_id, !!extra.com_plastico);
     out.push({ ficha_id: i.ficha_id, quantidade: (Number(i.quantidade)||1)*qtdKits, dia_producao: extra.dia_producao||null,
@@ -607,9 +599,20 @@ async function linhasDoKit(kitId, qtdKits, extra){
   }
   return out;
 }
+async function kpPreview(){
+  const el = document.getElementById('kp-prev'), sel = document.getElementById('kp-kit'); if(!el || !sel) return;
+  const { data: k } = await sb.from('kits').select('preco_fixo,desconto_pct, kit_itens(quantidade, fichas_tecnicas(preco_venda))').eq('id', sel.value).single();
+  if(!k){ el.textContent = ''; return; }
+  const soma = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0)*(Number(i.quantidade)||1),0);
+  const normal = k.preco_fixo!=null ? Number(k.preco_fixo) : soma*(1-(Number(k.desconto_pct)||0)/100);
+  const d = numBR(document.getElementById('kp-desc').value)||0, q = Number(document.getElementById('kp-qtd').value)||1, cada = normal*(1-d/100);
+  el.innerHTML = normal>0 ? `Cada kit: ${d?`<s>${money(normal)}</s> `:''}<b>${money(cada)}</b> · Total: <b>${money(cada*q)}</b>` : 'Kit sem preço cadastrado (coloque em Produtos → Kits).';
+}
 function kitModalHtml(acao){
-  return `<label>Kit</label><select id="kp-kit">${(window._kitsCache||[]).map(k=>`<option value="${k.id}">${escAttr(k.nome)}</option>`).join('')}</select>
-    <label>Quantos kits</label><input id="kp-qtd" type="number" min="1" value="1">
+  return `<label>Kit</label><select id="kp-kit" onchange="kpPreview()">${(window._kitsCache||[]).map(k=>`<option value="${k.id}">${escAttr(k.nome)}</option>`).join('')}</select>
+    <label>Quantos kits</label><input id="kp-qtd" type="number" min="1" value="1" oninput="kpPreview()">
+    <label>Desconto (%) — opcional</label><input id="kp-desc" inputmode="decimal" placeholder="Ex.: 12,9" oninput="kpPreview()">
+    <div id="kp-prev" class="muted" style="font-size:13px;margin-top:4px;"></div>
     <label>Dia de produção</label><input id="kp-dia" type="date" value="${todayISO()}">
     <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="kp-plastico"> Com plástico (sob encomenda)</label>
     <button class="btn block gold" style="margin-top:14px;" onclick="${acao}">Adicionar kit</button><p id="kp-msg" class="error"></p>`;
@@ -617,11 +620,11 @@ function kitModalHtml(acao){
 async function adicionarKitPedido(pedidoId){
   const { data } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome'); window._kitsCache = data||[];
   if(!window._kitsCache.length){ alert('Nenhum kit cadastrado. Crie em Produtos → Kits.'); return; }
-  showModal(`<h2>Adicionar kit <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>${kitModalHtml(`salvarKitPedido('${pedidoId}')`)}`);
+  showModal(`<h2>Adicionar kit <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>${kitModalHtml(`salvarKitPedido('${pedidoId}')`)}`); kpPreview();
 }
 async function salvarKitPedido(pedidoId){
   const kitId = document.getElementById('kp-kit').value, q = Number(document.getElementById('kp-qtd').value)||1;
-  const linhas = await linhasDoKit(kitId, q, { dia_producao: document.getElementById('kp-dia').value, com_plastico: document.getElementById('kp-plastico').checked });
+  const linhas = await linhasDoKit(kitId, q, { dia_producao: document.getElementById('kp-dia').value, com_plastico: document.getElementById('kp-plastico').checked, desconto: numBR(document.getElementById('kp-desc').value)||0 });
   const { error } = await sb.from('pecas').insert(linhas.map(l => ({ ...l, pedido_id: pedidoId })));
   if(error){ document.getElementById('kp-msg').textContent = error.message; return; }
   closeModal(); abrirPedido(pedidoId);
@@ -630,13 +633,13 @@ async function npAbrirSeletorKit(kitId){
   if(document.getElementById('np-prazo')) npCapturarForm();
   const { data } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome'); window._kitsCache = data||[];
   if(!window._kitsCache.length){ alert('Nenhum kit cadastrado. Crie em Produtos → Kits.'); return; }
-  showModal(`<h2>Adicionar kit <button class="close" onclick="npMostrarForm()">&times;</button></h2>${kitModalHtml('npConfirmarKit()')}`);
+  showModal(`<h2>Adicionar kit <button class="close" onclick="npMostrarForm()">&times;</button></h2>${kitModalHtml('npConfirmarKit()')}`); kpPreview();
   if(kitId && document.getElementById('kp-kit')){ document.getElementById('kp-kit').value = kitId; document.getElementById('kp-kit').dispatchEvent(new Event('change')); }
 }
 async function npConfirmarKit(){
   const sel = document.getElementById('kp-kit'), q = Number(document.getElementById('kp-qtd').value)||1;
   npPecas.push({ kit: true, kit_id: sel.value, nome: '📦 ' + sel.options[sel.selectedIndex].text, quantidade: q,
-    dia_producao: document.getElementById('kp-dia').value, com_plastico: document.getElementById('kp-plastico').checked });
+    dia_producao: document.getElementById('kp-dia').value, com_plastico: document.getElementById('kp-plastico').checked, desconto: numBR(document.getElementById('kp-desc').value)||0 });
   await npMostrarForm();
 }
 async function renderProdutos(){
@@ -1475,8 +1478,18 @@ function pedidoPecasHtml(pecas, pedidoId){
       <div class="muted" style="font-size:12px;margin:4px 0;">${Number(k.desconto_pct)?`desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}% · `:''}toque para ver as peças</div>
       ${g.map(pecaItemHtml).join('')}
       <div class="muted" style="font-size:13px;margin-top:6px;">Cada kit: <b>${money(tot/(k.kit_qtd||1))}</b></div>
-      <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do kit</button>
+      <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do kit</button><button class="btn sm" onclick="descontoKitPedido('${k.kit_grupo}','${pedidoId}')">% Desconto</button>
       <button class="btn sm ghost" style="color:var(--danger);" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">Tirar este kit do pedido</button></div></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
+}
+async function descontoKitPedido(grupo, pedidoId){
+  const { data: ps } = await sb.from('pecas').select('id,desconto_pct').eq('kit_grupo', grupo);
+  if(!ps || !ps.length) return;
+  const at = Number(ps[0].desconto_pct)||0;
+  const r = prompt('Desconto (%) para este kit:', at ? String(Math.round(at*10)/10).replace('.',',') : '');
+  if(r==null) return; const d = numBR(r.replace('%','')) || 0;
+  const { error } = await sb.from('pecas').update({ desconto_pct: d }).eq('kit_grupo', grupo);
+  if(error){ alert(error.message); return; }
+  closeModal(); abrirPedido(pedidoId);
 }
 async function valorKitPedido(grupo, pedidoId){
   const { data: ps } = await sb.from('pecas').select('id,quantidade,kit_qtd,valor_venda,desconto_pct,ficha_id, fichas_tecnicas!pecas_ficha_id_fkey(preco_venda)').eq('kit_grupo', grupo).order('criado_em');
