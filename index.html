@@ -278,7 +278,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 14:55</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 17:55</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -2069,9 +2069,17 @@ async function plRender(pessoaId){
   if(abertos.length) h += `<div style="display:flex;gap:8px;margin:8px 0;"><button class="btn ghost" style="flex:1" onclick="plWhats('${pessoaId}')">📲 Enviar relatório (imagem)</button><button class="btn ghost" onclick="plImprimirA4('${pessoaId}')">🖨️ A4</button>${/leidis/i.test((window._plPessoa||{}).nome||'') ? `<button class="btn ghost" onclick="plWhats('${pessoaId}', true)">🇪🇸 Español</button>` : ''}</div>`;
   h += abertos.length ? plPorMes(abertos.filter(l=>l.ficha_id), l=>linha(l,true)) + (abertos.length>0 ? `<button class="btn block" style="margin-top:8px;" onclick="plPagar(${escAttr(JSON.stringify(abertos.map(l=>l.id)))},'${pessoaId}')">✓ Marcar tudo como pago (${money(totAberto)})</button>` : '') : '<p class="muted">Nada a pagar. 🎉</p>';
   if(pagos.length){
-    const porMes = {}; pagos.forEach(l=>{ const m=(l.pago_em||l.data||'').slice(0,7); (porMes[m]=porMes[m]||[]).push(l); });
-    h += Object.keys(porMes).sort().reverse().map(m=>{ const ll=porMes[m], t=ll.reduce((s,l)=>s+tot(l),0), [y,mm]=m.split('-');
-      return `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:600;color:#2E8B57;">✅ Pagos ${mm}/${y} (${ll.length}) · ${money(t)}</summary>${ll.map(l=>linha(l,false)).join('')}</details>`; }).join('');
+    // um bloco por pagamento (data em que marcou pago), resumido
+    const porPag = {}; pagos.forEach(l=>{ const d=(l.pago_em||l.data||'').slice(0,10); (porPag[d]=porPag[d]||[]).push(l); });
+    h += `<h3 style="font-size:14px;margin:18px 0 6px;">✅ Pagamentos feitos</h3>` + Object.keys(porPag).sort().reverse().map(d=>{ const ll=porPag[d], t=ll.reduce((s,l)=>s+tot(l),0), ids=escAttr(JSON.stringify(ll.map(l=>l.id)));
+      const lp = ll.filter(l=>l.ficha_id).reduce((s,l)=>s+tot(l),0), ls = t - lp;
+      return `<div class="card" style="margin-bottom:8px;padding:10px 12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span style="color:#2E8B57;font-weight:600;">Pago em ${fmtDate(d)}</span><strong>${money(t)}</strong></div>
+        <div class="muted" style="font-size:12px;">${ls ? `Produção ${money(lp)} · Salário e vales ${money(ls)}` : `${ll.length} lançamento(s)`}</div>
+        <div style="display:flex;gap:6px;margin-top:8px;"><button class="btn sm ghost" onclick="plImprimirA4('${pessoaId}', ${ids})">🖨️ A4</button>
+          <details style="flex:1;"><summary class="btn sm ghost" style="list-style:none;display:inline-block;">ver itens</summary>
+            <div style="font-size:12.5px;margin-top:6px;">${ll.map(l=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--line,#2e3242);"><span>${escAttr(String(l.produto||'').replace(/ · [a-z]{3}\/\d{2}$/,''))}${l.ficha_id?` <span class="muted">${l.quantidade}×${money(l.valor_unit)}</span>`:''}</span><span style="white-space:nowrap;">${money(tot(l))}</span></div>`).join('')}
+            <button class="btn sm ghost" style="margin-top:6px;color:var(--danger);" onclick="plDesfazerVarios(${ids},'${pessoaId}')">Desfazer este pagamento</button></div></details></div></div>`; }).join('');
   }
   div.innerHTML = h;
 }
@@ -2103,8 +2111,9 @@ function plImagem(es){
   x.fillStyle = '#b03a2e'; x.font = '700 34px '+sans; x.textAlign = 'right'; x.fillText(money(total), W-PAD-28, yt+55); x.textAlign = 'left';
   return c;
 }
-async function plImprimirA4(pessoaId){
-  const p = window._plPessoa || {}, itens = Object.values(window._plItens||{}).filter(l=>!l.pago).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+async function plImprimirA4(pessoaId, ids){
+  const p = window._plPessoa || {}, itens = (ids ? ids.map(id=>(window._plItens||{})[id]).filter(Boolean) : Object.values(window._plItens||{}).filter(l=>!l.pago)).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const pagoEm = ids && itens[0] && itens[0].pago_em ? fmtDate(itens[0].pago_em) : '';
   const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const tot = l => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0), total = itens.reduce((s,l)=>s+tot(l),0);
   // tabela da pessoa e valores dos níveis
@@ -2143,7 +2152,7 @@ async function plImprimirA4(pessoaId){
     <h2>Produção (peças costuradas)</h2>
     <table><tr><th>Peça</th><th class="c">Qtd</th><th class="v">Valor un.</th><th class="v">Total</th></tr>${corpo || '<tr><td colspan="4">Nenhuma peça a pagar.</td></tr>'}${prod.length&&sal.length?`<tr class="mes"><td colspan="3">Subtotal produção</td><td class="v">${money(totProd)}</td></tr>`:''}</table>
     ${sal.length&&prod.length?`<div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px"><span>Produção ${money(totProd)} + Salário e vales ${money(totSal)}</span></div>`:''}
-    <div class="tot"><span>TOTAL A PAGAR</span><span>${money(total)}</span></div>
+    <div class="tot"><span>${pagoEm ? `TOTAL PAGO EM ${pagoEm}` : 'TOTAL A PAGAR'}</span><span>${money(total)}</span></div>
     <div class="ass"><div>${esc(p.nome||'')}</div><div>Zênite</div></div>
   </body></html>`;
   let fr = document.getElementById('frame-impressao'); if(fr) fr.remove();
@@ -2187,6 +2196,12 @@ async function plSalvarEdicao(id, pessoaId){
 async function plPagar(ids, pessoaId){
   if(!confirm(ids.length>1 ? 'Marcar tudo como pago?' : 'Marcar como pago?')) return;
   const { error } = await sb.from('producao_lancamentos').update({ pago: true, pago_em: todayISO() }).in('id', ids);
+  if(error){ alert(error.message); return; }
+  plRender(pessoaId);
+}
+async function plDesfazerVarios(ids, pessoaId){
+  if(!confirm('Desfazer este pagamento? Os itens voltam para "A pagar".')) return;
+  const { error } = await sb.from('producao_lancamentos').update({ pago: false, pago_em: null }).in('id', ids);
   if(error){ alert(error.message); return; }
   plRender(pessoaId);
 }
