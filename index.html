@@ -2115,7 +2115,10 @@ async function plImprimirA4(pessoaId){
   const vv = (t,n) => (niv[t]&&niv[t][n]!=null) ? money(niv[t][n]) : '—';
   const tabNiveis = `<table class="niv"><tr><th></th>${tipos.map(t=>`<th>${t}</th>`).join('')}</tr>${[1,2,3].map(n=>`<tr><td><b>Nível ${n}</b></td>${tipos.map(t=>`<td>${vv(t,n)}</td>`).join('')}</tr>`).join('')}</table>`;
   // itens por mês
-  const g = {}; itens.forEach(l => { const m=(l.data||'').slice(0,7); (g[m]=g[m]||[]).push(l); });
+  const prod = itens.filter(l => l.ficha_id), sal = itens.filter(l => !l.ficha_id);
+  const totProd = prod.reduce((s,l)=>s+tot(l),0), totSal = sal.reduce((s,l)=>s+tot(l),0);
+  const g = {}; prod.forEach(l => { const m=(l.data||'').slice(0,7); (g[m]=g[m]||[]).push(l); });
+  const salHtml = sal.length ? `<h2>Salário e vales</h2><table>${sal.map(l => { const v = tot(l); return `<tr><td>${esc(l.produto||'')}</td><td class="v" style="${v<0?'color:#b03a2e':''}"><b>${v<0?'− ':''}${money(Math.abs(v))}</b></td></tr>`; }).join('')}<tr class="mes"><td>Subtotal salário e vales</td><td class="v">${money(totSal)}</td></tr></table>` : '';
   const corpo = Object.keys(g).sort().map(m => { const [y,mm] = m.split('-'), t = g[m].reduce((s,l)=>s+tot(l),0);
     return `<tr class="mes"><td colspan="3">${(PL_MESES[Number(mm)-1]||'').toUpperCase()}/${y}</td><td class="v">${money(t)}</td></tr>` +
       g[m].map(l => `<tr><td>${esc(String(l.produto||'').replace(/ · [a-z]{3}\/\d{2}$/,''))}</td><td class="c">${l.quantidade}</td><td class="v">${money(l.valor_unit)}</td><td class="v"><b>${money(tot(l))}</b></td></tr>`).join(''); }).join('');
@@ -2140,8 +2143,10 @@ async function plImprimirA4(pessoaId){
       <div style="margin-top:8px">${tabNiveis}</div>
       <p style="margin-top:6px;color:#666;font-size:11px">Valor pago por peça costurada, de acordo com o nível.</p>
     </div>
-    <h2>Produção a pagar</h2>
-    <table><tr><th>Peça</th><th class="c">Qtd</th><th class="v">Valor un.</th><th class="v">Total</th></tr>${corpo || '<tr><td colspan="4">Nada a pagar.</td></tr>'}</table>
+    <h2>Produção (peças costuradas)</h2>
+    <table><tr><th>Peça</th><th class="c">Qtd</th><th class="v">Valor un.</th><th class="v">Total</th></tr>${corpo || '<tr><td colspan="4">Nenhuma peça a pagar.</td></tr>'}${prod.length&&sal.length?`<tr class="mes"><td colspan="3">Subtotal produção</td><td class="v">${money(totProd)}</td></tr>`:''}</table>
+    ${salHtml}
+    ${sal.length&&prod.length?`<div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px"><span>Produção ${money(totProd)} + Salário e vales ${money(totSal)}</span></div>`:''}
     <div class="tot"><span>TOTAL A PAGAR</span><span>${money(total)}</span></div>
     <div class="ass"><div>${esc(p.nome||'')}</div><div>Zênite</div></div>
   </body></html>`;
