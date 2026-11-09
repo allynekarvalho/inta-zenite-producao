@@ -937,12 +937,15 @@ async function npMostrarForm(){
     <input type="hidden" id="np-cliente" value="">
     <div id="np-novo-cliente">
       <label>Cliente</label>
-      <input id="np-cliente-nome" placeholder="Nome do Irmão ou da Loja" value="${npFormCache?.clienteNome||''}">
-      <label>Tipo</label>
-      <select id="np-cliente-tipo">
-        <option value="irmao" ${npFormCache?.clienteTipo!=='loja'?'selected':''}>Irmão</option>
-        <option value="loja" ${npFormCache?.clienteTipo==='loja'?'selected':''}>Loja</option>
-      </select>
+      <input id="np-cliente-nome" placeholder="Nome do Irmão, Loja ou Potência" value="${npFormCache?.clienteNome||''}" onblur="npBuscarCliente()">
+      <input type="hidden" id="np-cliente-tipo" value="${npFormCache?.clienteTipo||'irmao'}">
+      <label>Contato</label>
+      <input id="npc-telefone" type="tel" placeholder="Telefone / WhatsApp" value="${escAttr(npFormCache?.cli?.telefone||'')}">
+      <details id="np-cli-mais" style="margin-top:8px;">
+        <summary style="cursor:pointer;color:var(--royal);font-size:14px;">+ mais dados do cliente (cidade, CPF/CNPJ, endereço...)</summary>
+        ${clienteCamposHtml('npc', npFormCache?.cli||{}, ['telefone'])}
+      </details>
+      <div id="np-cli-aviso" class="muted" style="font-size:12px;margin-top:4px;"></div>
     </div>
     <label>Prazo</label>
     <input type="date" id="np-prazo" value="${npFormCache?.prazo||''}">
@@ -998,8 +1001,28 @@ function renderNpPecasList(){
     </div>`).join('');
 }
 
+const CLIENTE_TIPOS = [['irmao','Irmão'],['loja','Loja'],['potencia','Potência / Obediência'],['revendedor','Revendedor']];
+const tipoClienteLabel = (t) => (CLIENTE_TIPOS.find(x=>x[0]===t)||[0,t||''])[1];
+const CLI_CAMPOS = [['telefone','Contato (telefone / WhatsApp)','tel'],['pertence_a','Loja / Potência a que pertence','text'],['cidade','Cidade','text'],['uf','UF','text'],['cpf_cnpj','CPF / CNPJ','text'],['email','E-mail','email'],['endereco','Endereço para entrega','text']];
+function clienteCamposHtml(p, c, sem){
+  c = c || {}; sem = sem || [];
+  return CLI_CAMPOS.filter(([k]) => !sem.includes(k)).map(([k,l,t]) => `<label>${l}</label><input id="${p}-${k}" type="${t}" value="${escAttr(c[k]||'')}" ${k==='uf'?'maxlength="2" style="text-transform:uppercase;"':''}>`).join('');
+}
+function lerClienteCampos(p){ const o = {}; CLI_CAMPOS.forEach(([k]) => { const el = document.getElementById(p+'-'+k); if(el){ const v = el.value.trim(); o[k] = v ? (k==='uf'?v.toUpperCase():v) : null; } }); return o; }
+// se o nome já existe, preenche os dados do cliente
+async function npBuscarCliente(){
+  const nome = (document.getElementById('np-cliente-nome')||{}).value?.trim(); const av = document.getElementById('np-cli-aviso');
+  if(!nome){ if(av) av.textContent=''; return; }
+  const { data } = await sb.from('clientes').select('*').ilike('nome', nome).limit(1);
+  const c = data && data[0];
+  if(!c){ if(av) av.textContent = 'Cliente novo: será cadastrado ao criar o pedido.'; return; }
+  if(av) av.textContent = '✓ Cliente já cadastrado: dados preenchidos.';
+  const sel = document.getElementById('np-cliente-tipo'); if(sel && c.tipo) sel.value = c.tipo;
+  CLI_CAMPOS.forEach(([k]) => { const el = document.getElementById('npc-'+k); if(el && !el.value && c[k]) el.value = c[k]; });
+}
 function npCapturarForm(){
   npFormCache = {
+    cli: lerClienteCampos('npc'),
     clienteId: document.getElementById('np-cliente').value,
     clienteNome: document.getElementById('np-cliente-nome').value,
     clienteTipo: document.getElementById('np-cliente-tipo').value,
@@ -1126,10 +1149,11 @@ async function salvarNovoPedido(){
     const nome = document.getElementById('np-cliente-nome').value.trim();
     if(!nome){ msg.textContent = 'Informe o nome do cliente.'; return; }
     const tipo = document.getElementById('np-cliente-tipo').value;
+    const dados = lerClienteCampos('npc'); Object.keys(dados).forEach(k => { if(dados[k]==null) delete dados[k]; });
     const { data: existe } = await sb.from('clientes').select('id').ilike('nome', nome).limit(1);
-    if(existe && existe.length){ clienteId = existe[0].id; }
+    if(existe && existe.length){ clienteId = existe[0].id; await sb.from('clientes').update({ tipo, ...dados }).eq('id', clienteId); }
     else {
-      const { data, error } = await sb.from('clientes').insert({ nome, tipo }).select().single();
+      const { data, error } = await sb.from('clientes').insert({ nome, tipo, ...dados }).select().single();
       if(error){ msg.textContent = error.message; return; }
       clienteId = data.id;
     }
@@ -1155,14 +1179,44 @@ async function salvarNovoPedido(){
   await abrirPedido(data.id);
 }
 
+function clienteCardHtml(c, pedidoId){
+  if(!c) return '';
+  const tel = String(c.telefone||'').replace(/\D/g,''), wa = tel ? (tel.length<=11 ? '55'+tel : tel) : '';
+  const linha = [c.pertence_a, [c.cidade, c.uf].filter(Boolean).join('/')].filter(Boolean).join(' · ');
+  return `<div class="card" style="margin:6px 0 8px;">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+      <div><strong>${escAttr(c.nome||'')}</strong>
+        ${linha?`<div class="muted" style="font-size:13px;">${escAttr(linha)}</div>`:''}
+        ${c.telefone?`<div class="muted" style="font-size:13px;">📞 ${escAttr(c.telefone)}</div>`:''}
+        ${c.endereco?`<div class="muted" style="font-size:12px;">📍 ${escAttr(c.endereco)}</div>`:''}</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${wa?`<a class="btn sm ghost" href="https://wa.me/${wa}" target="_blank">WhatsApp</a>`:''}
+        <button class="btn sm ghost" onclick="editarCliente('${c.id}','${pedidoId}')">Editar</button>
+      </div></div></div>`;
+}
+async function editarCliente(clienteId, pedidoId){
+  const { data: c } = await sb.from('clientes').select('*').eq('id', clienteId).single();
+  showModal(`<h2>Cliente <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>
+    <label>Nome</label><input id="ec-nome" value="${escAttr(c.nome||'')}">
+    ${clienteCamposHtml('ecc', c)}
+    <label>Observações</label><textarea id="ec-obs" rows="2">${escAttr(c.observacao||'')}</textarea>
+    <button class="btn block gold" style="margin-top:14px;" onclick="salvarCliente('${clienteId}','${pedidoId}')">Salvar</button><p id="ec-msg" class="error"></p>`);
+}
+async function salvarCliente(clienteId, pedidoId){
+  const nome = document.getElementById('ec-nome').value.trim(); if(!nome){ document.getElementById('ec-msg').textContent='Informe o nome.'; return; }
+  const { error } = await sb.from('clientes').update({ nome, observacao: document.getElementById('ec-obs').value.trim()||null, ...lerClienteCampos('ecc') }).eq('id', clienteId);
+  if(error){ document.getElementById('ec-msg').textContent = error.message; return; }
+  closeModal(); abrirPedido(pedidoId);
+}
 async function abrirPedido(id){
-  const { data: pedido } = await sb.from('pedidos').select('*, clientes(nome,telefone)').eq('id', id).single();
+  const { data: pedido } = await sb.from('pedidos').select('*, clientes(*)').eq('id', id).single();
   const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
   { const sids = [...new Set((pecas||[]).map(p=>p.servico_id).filter(Boolean))]; window._nivelNome = {};
     if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => window._nivelNome[x.id] = x.nome); } }
   showModal(`
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
-    <p class="muted">${pedido.clientes?.nome || ''} · Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
+    ${clienteCardHtml(pedido.clientes, id)}
+    <p class="muted">Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
     <h2 style="font-size:15px;margin-top:18px;">Peças</h2>
     <div id="pedido-pecas">
       ${(pecas||[]).map(p=>`
