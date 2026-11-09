@@ -602,6 +602,8 @@ async function carregarServicos(){
   const { data: pt } = await sb.from('precos_tabela').select('tabela,valor,ficha_id, ficha:fichas_tecnicas(id,nome,ativo)');
   const pm = {}, sv = {};
   (pt||[]).forEach(r => { (pm[r.ficha_id] = pm[r.ficha_id] || {})[r.tabela] = Number(r.valor); if(r.ficha && r.ficha.ativo) sv[r.ficha_id] = r.ficha; });
+  const { data: ss } = await sb.from('fichas_tecnicas').select('id,nome,ativo').eq('tipo','servico').eq('ativo', true);
+  (ss||[]).forEach(f => { sv[f.id] = f; });
   window._precos = pm; window._servicos = Object.values(sv).sort((a,b)=>a.nome.localeCompare(b.nome));
 }
 async function carregarMateriaisCategorias(){
@@ -722,7 +724,7 @@ function listaMateriaisHtml(prefix, outrosAviamentos){
     <h2 style="font-size:15px;margin-top:22px;">Lista de materiais</h2>
     <p class="muted">Toque no material para escolher (fica azul) e coloque a medida usada logo abaixo. Pode escolher mais de um por categoria.</p>
     ${CATEGORIAS_MATERIAL.map(cat=>categoriaMateriaisHtml(prefix, cat)).join('')}
-    <label style="margin-top:14px;">🧵 Serviço da equipe (mão de obra)</label>
+    <label style="margin-top:14px;">🧵 Nível de costura (o que a costureira recebe)</label>
     <select id="${prefix}-servico" onchange="window._pmServ=window._pmServ||{}; window._pmServ['${prefix}']=this.value||null; atualizarCustoProduto('${prefix}')">
       <option value="">— sem mão de obra —</option>
       ${(window._servicos||[]).map(sv=>`<option value="${sv.id}" ${((window._pmServ||{})[prefix]===sv.id)?'selected':''}>${escAttr(sv.nome)}</option>`).join('')}
@@ -1473,7 +1475,8 @@ async function abrirPessoa(id){
     <label>Produto</label>
     <select id="pl-ficha" onchange="plPreencherValor()">
       <option value="">Escolha...</option>
-      ${(fichas||[]).map(f=>`<option value="${f.id}">${escAttr(f.nome)}</option>`).join('')}
+      ${(()=>{ const g = (t)=>(fichas||[]).filter(f=>(f.tipo||'produto')===t); const op = (l)=>l.map(f=>`<option value="${f.id}">${escAttr(f.nome)}</option>`).join('');
+        return `<optgroup label="Níveis de costura">${op(g('servico'))}</optgroup><optgroup label="Bordados">${op(g('bordado'))}</optgroup><optgroup label="Produtos (vai pelo nível)">${op(g('produto'))}</optgroup>`; })()}
     </select>
     <div class="row" style="gap:8px;">
       <div style="flex:1"><label>Quantidade</label><input id="pl-qtd" type="number" min="1" inputmode="numeric" oninput="plTotal()"></div>
@@ -1500,6 +1503,7 @@ async function abrirPessoa(id){
     </div>` : ''}
     <div id="pl-lista" style="margin-top:14px;"><p class="muted">Carregando...</p></div>
   `);
+  window._plFichas = {}; (fichas||[]).forEach(f => { window._plFichas[f.id] = f; });
   window._plValores = {};
   if(tabela==='costureiras'){ const { data: pt } = await sb.from('precos_tabela').select('ficha_id,valor').eq('tabela', Number(pessoa.tabela)===1?1:2); (pt||[]).forEach(v=>{ window._plValores[v.ficha_id] = Number(v.valor)||0; }); }
   (valores||[]).forEach(v=>{ window._plValores[v.ficha_id] = Number(v.valor)||0; });
@@ -1564,8 +1568,9 @@ function plPorMes(itens, linhaFn){
   }).join('');
 }
 function plNum(v){ return Number(String(v||'').replace(/\./g,'').replace(',','.')) || 0; }
+function plServicoDe(id){ const f = (window._plFichas||{})[id]; return (f && f.tipo==='produto' && f.servico_id && (window._plFichas||{})[f.servico_id]) ? f.servico_id : id; }
 function plPreencherValor(){
-  const f = document.getElementById('pl-ficha').value, v = (window._plValores||{})[f];
+  const f = plServicoDe(document.getElementById('pl-ficha').value), v = (window._plValores||{})[f];
   document.getElementById('pl-valor').value = v ? String(v).replace('.',',') : '';
   plTotal();
 }
@@ -1575,10 +1580,10 @@ function plTotal(){
 }
 async function plLancar(pessoaId){
   const sel = document.getElementById('pl-ficha');
-  const ficha_id = sel.value, quantidade = Number(document.getElementById('pl-qtd').value)||0, valor_unit = plNum(document.getElementById('pl-valor').value);
+  const ficha_id = plServicoDe(sel.value), quantidade = Number(document.getElementById('pl-qtd').value)||0, valor_unit = plNum(document.getElementById('pl-valor').value);
   if(!ficha_id){ alert('Escolha o produto.'); return; }
   if(!quantidade){ alert('Coloque a quantidade.'); return; }
-  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: window._plTipo, pessoa_id: pessoaId, ficha_id, produto: sel.options[sel.selectedIndex].text, quantidade, valor_unit, data: document.getElementById('pl-data').value || todayISO() });
+  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: window._plTipo, pessoa_id: pessoaId, ficha_id, produto: ((window._plFichas||{})[ficha_id]||{}).nome || sel.options[sel.selectedIndex].text, quantidade, valor_unit, data: document.getElementById('pl-data').value || todayISO() });
   if(error){ alert(error.message); return; }
   document.getElementById('pl-qtd').value = ''; plTotal();
   plRender(pessoaId);
@@ -2180,9 +2185,15 @@ async function selecionarFichaCalc(fichaId, nome){
   atualizarCalcTotais(fichaId);
   sb.from('costureiras').select('id,nome').eq('ativo', true).order('nome').then(({data})=>{ const sel=document.getElementById('calc-cost'); if(sel) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; sel.appendChild(o); }); });
 }
+async function calcServico(fichaId){
+  const { data: f } = await sb.from('fichas_tecnicas').select('id,nome,servico_id').eq('id', fichaId).single();
+  if(f && f.servico_id){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').eq('id', f.servico_id).single(); if(sv) return sv; }
+  return f || { id: fichaId, nome: '' };
+}
 async function calcValorCost(fichaId){
   const cid = document.getElementById('calc-cost').value, inp = document.getElementById('calc-valor');
   if(!cid) return;
+  fichaId = (await calcServico(fichaId)).id;
   const { data } = await sb.from('costureira_valores').select('valor').eq('costureira_id', cid).eq('ficha_id', fichaId);
   let v = data && data[0] && Number(data[0].valor);
   if(!v){
@@ -2195,8 +2206,8 @@ async function calcValorCost(fichaId){
 async function calcLancarProducao(fichaId, nomeFicha, qtd, vUn){
   const chk = document.getElementById('calc-lancar'), sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado');
   if(!chk || !chk.checked || !sel.value || !qtd) return;
-  const nomeC = sel.options[sel.selectedIndex].text;
-  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: 'costureiras', pessoa_id: sel.value, ficha_id: fichaId, produto: nomeFicha, quantidade: qtd, valor_unit: vUn, data: document.getElementById('calc-dprod').value || todayISO() });
+  const nomeC = sel.options[sel.selectedIndex].text, sv = await calcServico(fichaId);
+  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: 'costureiras', pessoa_id: sel.value, ficha_id: sv.id, produto: sv.nome || nomeFicha, quantidade: qtd, valor_unit: vUn, data: document.getElementById('calc-dprod').value || todayISO() });
   if(error){ msg.textContent = 'Não lançou na produção: '+error.message; return; }
   chk.checked = false;
   msg.innerHTML = `✅ Lançado na Produção de <b>${escAttr(nomeC)}</b>: ${qtd} × ${money(vUn)} = ${money(qtd*vUn)}`;
