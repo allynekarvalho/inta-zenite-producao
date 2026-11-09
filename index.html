@@ -424,7 +424,136 @@ async function excluirBordado(id){
   if(error){ alert(error.message); return; }
   renderBordados();
 }
+function numBR(v){ const t = String(v==null?'':v).trim(); if(t==='') return null; const n = Number(t.replace(/\./g,'').replace(',','.')); return isNaN(n) ? null : n; }
+// custo de cada produto (material + bordado + corte + mão de obra Tabela 1) ou custo de compra se for revenda
+async function custosFichas(ids){
+  ids = [...new Set(ids.filter(Boolean))]; const out = {}; if(!ids.length) return out;
+  const [{ data: fs }, { data: fm }, { data: fb }, { data: pt }] = await Promise.all([
+    sb.from('fichas_tecnicas').select('id,revenda,custo_compra,custo_corte,servico_id').in('id', ids),
+    sb.from('ficha_materiais').select('ficha_id,quantidade_por_unidade,materiais(preco,embalagem,qtd_por_embalagem)').in('ficha_id', ids),
+    sb.from('ficha_bordados').select('ficha_id,quantidade,bordado:fichas_tecnicas!ficha_bordados_bordado_id_fkey(custo_bordado)').in('ficha_id', ids),
+    sb.from('precos_tabela').select('ficha_id,valor').eq('tabela', 1)]);
+  const mo = {}; (pt||[]).forEach(r => mo[r.ficha_id] = Number(r.valor));
+  (fs||[]).forEach(f => {
+    if(f.revenda){ out[f.id] = Number(f.custo_compra)||0; return; }
+    let c = Number(f.custo_corte)||0;
+    (fm||[]).filter(r=>r.ficha_id===f.id && r.materiais).forEach(r => { const cu = custoUnit(r.materiais); if(cu!=null) c += cu*Number(r.quantidade_por_unidade||0); });
+    (fb||[]).filter(r=>r.ficha_id===f.id).forEach(r => { c += (Number(r.quantidade)||0)*(Number(r.bordado&&r.bordado.custo_bordado)||0); });
+    c += mo[f.servico_id||f.id] || 0;
+    out[f.id] = c;
+  });
+  return out;
+}
+async function renderKits(){
+  const c = document.getElementById('content');
+  const { data: kits } = await sb.from('kits').select('*, kit_itens(quantidade, fichas_tecnicas(id,nome,preco_venda))').eq('ativo', true).order('nome');
+  c.innerHTML = `
+    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button class="active">📦 Kits</button></div>
+    <button class="btn block gold" onclick="editarKit()">+ Novo kit</button>
+    <div style="height:10px;"></div>
+    ${(kits||[]).map(k => { const sub = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.quantidade)||0)*(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0),0), tot = sub*(1-(Number(k.desconto_pct)||0)/100);
+      return `<div class="card" onclick="editarKit('${k.id}')" style="cursor:pointer;"><div style="display:flex;justify-content:space-between;gap:8px;"><strong>📦 ${escAttr(k.nome)}</strong><strong>${money(tot)}</strong></div>
+        <div class="muted" style="font-size:12px;">${(k.kit_itens||[]).map(i=>`${i.quantidade} ${escAttr(i.fichas_tecnicas&&i.fichas_tecnicas.nome||'')}`).join(' · ')}${Number(k.desconto_pct)?` · desconto ${k.desconto_pct}%`:''}</div></div>`; }).join('') || '<div class="card center muted">Nenhum kit ainda.</div>'}`;
+}
+async function editarKit(kitId){
+  const [{ data: fichas }, kr] = await Promise.all([
+    sb.from('fichas_tecnicas').select('id,nome,preco_venda').eq('ativo', true).eq('tipo','produto').order('nome'),
+    kitId ? sb.from('kits').select('*, kit_itens(ficha_id,quantidade)').eq('id', kitId).single() : Promise.resolve({ data: null })]);
+  const k = kr.data || { nome: '', desconto_pct: 0, kit_itens: [] };
+  window._kitFichas = {}; (fichas||[]).forEach(f => window._kitFichas[f.id] = f);
+  window._kitItens = (k.kit_itens||[]).map(i => ({ ficha_id: i.ficha_id, quantidade: i.quantidade }));
+  showModal(`<h2>${kitId?'Editar kit':'Novo kit'} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Nome do kit</label><input id="kit-nome" value="${escAttr(k.nome)}" placeholder="Ex.: Kit Grau 33 · Lojas Filosóficas">
+    <label>Peças do kit</label>
+    <div class="row" style="gap:6px;"><select id="kit-add" style="flex:3"><option value="">+ escolher produto...</option>${(fichas||[]).map(f=>`<option value="${f.id}">${escAttr(f.nome)}</option>`).join('')}</select>
+      <input id="kit-add-q" type="number" min="1" value="1" style="flex:1"><button class="btn sm" onclick="kitAddItem()">Adicionar</button></div>
+    <div id="kit-itens" class="card" style="margin-top:8px;"></div>
+    <label>Desconto do kit (%)</label><input id="kit-desc" inputmode="decimal" value="${String(k.desconto_pct||0).replace('.',',')}" oninput="kitRender()">
+    <div id="kit-total" class="card" style="margin-top:8px;"></div>
+    <button class="btn block gold" style="margin-top:12px;" onclick="salvarKit(${kitId?`'${kitId}'`:'null'})">Salvar kit</button>
+    ${kitId?`<button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirKit('${kitId}')">Excluir kit</button>`:''}
+    <p id="kit-msg" class="error"></p>`);
+  kitRender();
+}
+function kitAddItem(){
+  const id = document.getElementById('kit-add').value, q = Number(document.getElementById('kit-add-q').value)||1; if(!id) return;
+  const ex = window._kitItens.find(i=>i.ficha_id===id); if(ex) ex.quantidade += q; else window._kitItens.push({ ficha_id: id, quantidade: q });
+  document.getElementById('kit-add').value=''; kitRender();
+}
+async function kitRender(){
+  const box = document.getElementById('kit-itens'), tbox = document.getElementById('kit-total'); if(!box) return;
+  let sub = 0; const semPreco = [];
+  box.innerHTML = window._kitItens.map((i,ix) => { const f = window._kitFichas[i.ficha_id]||{}, pv = f.preco_venda!=null ? Number(f.preco_venda) : null; if(pv==null) semPreco.push(f.nome); sub += (pv||0)*i.quantidade;
+    return `<div class="item" style="gap:6px;"><span style="flex:1">${escAttr(f.nome||'?')}</span><input type="number" min="1" value="${i.quantidade}" style="width:56px;text-align:center;" onchange="window._kitItens[${ix}].quantidade=Number(this.value)||1;kitRender()">
+      <span style="white-space:nowrap;width:110px;text-align:right;">${pv!=null?`× ${money(pv)}`:'<span class="muted">sem preço</span>'}</span><button class="btn sm ghost" style="color:var(--danger);" onclick="window._kitItens.splice(${ix},1);kitRender()">✕</button></div>`; }).join('') || '<p class="muted">Adicione as peças do kit.</p>';
+  const d = numBR(document.getElementById('kit-desc').value)||0, tot = sub*(1-d/100);
+  const cs = await custosFichas(window._kitItens.map(i=>i.ficha_id)); const custo = window._kitItens.reduce((s,i)=>s+(cs[i.ficha_id]||0)*i.quantidade,0);
+  const L = (a,b,bold)=>`<div style="display:flex;justify-content:space-between;${bold?'font-weight:700;font-size:16px;':''}"><span>${a}</span><span>${b}</span></div>`;
+  tbox.innerHTML = L('Soma das peças', money(sub)) + (d?L(`Desconto ${d}%`, '− '+money(sub-tot)):'') + L('Preço do kit', money(tot), true) +
+    `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">${L('Custo do kit (Tabela 1)', money(custo))}${L('Lucro', money(tot-custo), true)}</div>` +
+    (semPreco.length?`<div class="muted" style="font-size:12px;">Sem preço de venda: ${semPreco.map(escAttr).join(', ')} (coloque no produto)</div>`:'');
+}
+async function salvarKit(kitId){
+  const nome = document.getElementById('kit-nome').value.trim(), msg = document.getElementById('kit-msg');
+  if(!nome){ msg.textContent = 'Informe o nome do kit.'; return; }
+  if(!window._kitItens.length){ msg.textContent = 'Adicione as peças do kit.'; return; }
+  const desconto_pct = numBR(document.getElementById('kit-desc').value)||0;
+  let id = kitId;
+  if(id){ const { error } = await sb.from('kits').update({ nome, desconto_pct }).eq('id', id); if(error){ msg.textContent = error.message; return; }
+    await sb.from('kit_itens').delete().eq('kit_id', id); }
+  else { const { data, error } = await sb.from('kits').insert({ nome, desconto_pct }).select().single(); if(error){ msg.textContent = error.message; return; } id = data.id; }
+  const { error: e2 } = await sb.from('kit_itens').insert(window._kitItens.map(i => ({ kit_id: id, ficha_id: i.ficha_id, quantidade: i.quantidade })));
+  if(e2){ msg.textContent = e2.message; return; }
+  closeModal(); renderKits();
+}
+async function excluirKit(id){ if(!confirm('Excluir esse kit?')) return; await sb.from('kits').update({ ativo: false }).eq('id', id); closeModal(); renderKits(); }
+// abre o kit em peças (uma linha por produto) para o pedido
+async function linhasDoKit(kitId, qtdKits, extra){
+  const { data: k } = await sb.from('kits').select('*, kit_itens(ficha_id,quantidade, fichas_tecnicas(preco_venda,revenda))').eq('id', kitId).single();
+  const grupo = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random());
+  const out = [];
+  for(const i of (k.kit_itens||[])){
+    const nv = (i.fichas_tecnicas && i.fichas_tecnicas.revenda) ? null : await nivelDaPeca(i.ficha_id, !!extra.com_plastico);
+    out.push({ ficha_id: i.ficha_id, quantidade: (Number(i.quantidade)||1)*qtdKits, dia_producao: extra.dia_producao||null,
+      com_plastico: !!extra.com_plastico, servico_id: nv ? nv.servico_id : null,
+      valor_venda: i.fichas_tecnicas ? i.fichas_tecnicas.preco_venda : null, desconto_pct: Number(k.desconto_pct)||0,
+      kit_id: kitId, kit_grupo: grupo, kit_qtd: qtdKits });
+  }
+  return out;
+}
+function kitModalHtml(acao){
+  return `<label>Kit</label><select id="kp-kit">${(window._kitsCache||[]).map(k=>`<option value="${k.id}">${escAttr(k.nome)}</option>`).join('')}</select>
+    <label>Quantos kits</label><input id="kp-qtd" type="number" min="1" value="1">
+    <label>Dia de produção</label><input id="kp-dia" type="date" value="${todayISO()}">
+    <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="kp-plastico"> Com plástico (sob encomenda)</label>
+    <button class="btn block gold" style="margin-top:14px;" onclick="${acao}">Adicionar kit</button><p id="kp-msg" class="error"></p>`;
+}
+async function adicionarKitPedido(pedidoId){
+  const { data } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome'); window._kitsCache = data||[];
+  if(!window._kitsCache.length){ alert('Nenhum kit cadastrado. Crie em Produtos → Kits.'); return; }
+  showModal(`<h2>Adicionar kit <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>${kitModalHtml(`salvarKitPedido('${pedidoId}')`)}`);
+}
+async function salvarKitPedido(pedidoId){
+  const kitId = document.getElementById('kp-kit').value, q = Number(document.getElementById('kp-qtd').value)||1;
+  const linhas = await linhasDoKit(kitId, q, { dia_producao: document.getElementById('kp-dia').value, com_plastico: document.getElementById('kp-plastico').checked });
+  const { error } = await sb.from('pecas').insert(linhas.map(l => ({ ...l, pedido_id: pedidoId })));
+  if(error){ document.getElementById('kp-msg').textContent = error.message; return; }
+  closeModal(); abrirPedido(pedidoId);
+}
+async function npAbrirSeletorKit(){
+  npCapturarForm();
+  const { data } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome'); window._kitsCache = data||[];
+  if(!window._kitsCache.length){ alert('Nenhum kit cadastrado. Crie em Produtos → Kits.'); return; }
+  showModal(`<h2>Adicionar kit <button class="close" onclick="npMostrarForm()">&times;</button></h2>${kitModalHtml('npConfirmarKit()')}`);
+}
+async function npConfirmarKit(){
+  const sel = document.getElementById('kp-kit'), q = Number(document.getElementById('kp-qtd').value)||1;
+  npPecas.push({ kit: true, kit_id: sel.value, nome: '📦 ' + sel.options[sel.selectedIndex].text, quantidade: q,
+    dia_producao: document.getElementById('kp-dia').value, com_plastico: document.getElementById('kp-plastico').checked });
+  await npMostrarForm();
+}
 async function renderProdutos(){
+  if(state.produtos && state.produtos.aba === 'kits') return renderKits();
   const c = document.getElementById('content');
   const [{ data: potencias }, { data: tipos }] = await Promise.all([
     sb.from('potencias').select('*').order('nome'),
@@ -441,6 +570,7 @@ async function renderProdutos(){
   window._prodRitos = ritos;
 
   let html = `
+    <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button></div>
     <h2 style="font-size:15px;">Potência</h2>
     <div class="row">
       <input id="prod-busca-potencia" placeholder="Buscar ou digitar nova potência..." oninput="filtrarChips('prod-busca-potencia','prod-lista-potencia')">
@@ -829,6 +959,11 @@ async function abrirProduto(fichaId){
     <input id="epf-nome" value="${(f.nome||'').replace(/"/g,'&quot;')}">
     <label>Unidade de produção</label>
     <input id="epf-unidade" value="${(f.unidade_producao||'').replace(/"/g,'&quot;')}">
+    <div class="row" style="gap:8px;">
+      <div style="flex:1"><label>💰 Preço de venda (R$)</label><input id="epf-venda" inputmode="decimal" placeholder="0,00" value="${f.preco_venda!=null?String(f.preco_venda).replace('.',','):''}"></div>
+    </div>
+    <label class="checkline" style="margin-top:8px;"><input type="checkbox" id="epf-revenda" ${f.revenda?'checked':''} onchange="document.getElementById('epf-compra-w').style.display=this.checked?'block':'none'"> Revenda (compramos pronto de outra empresa)</label>
+    <div id="epf-compra-w" style="display:${f.revenda?'block':'none'};"><label>Custo de compra (R$)</label><input id="epf-compra" inputmode="decimal" placeholder="0,00" value="${f.custo_compra!=null?String(f.custo_compra).replace('.',','):''}"></div>
 
     <label>Fotos do produto</label>
     <div id="epf-fotos-wrap" style="margin-top:4px;">
@@ -873,6 +1008,9 @@ async function salvarEdicaoProduto(fichaId){
   const patch = {
     nome,
     unidade_producao: document.getElementById('epf-unidade').value.trim() || 'peça',
+    preco_venda: numBR(document.getElementById('epf-venda').value),
+    revenda: document.getElementById('epf-revenda').checked,
+    custo_compra: numBR(document.getElementById('epf-compra').value),
     outros_aviamentos: document.getElementById('epf-outros_aviamentos').value.trim() || null,
     servico_id: (window._pmServ||{})['epf'] || null,
     custo_corte: (window._pmCorteVal||{})['epf'] ?? null,
@@ -959,7 +1097,7 @@ async function npMostrarForm(){
 
     <h2 style="font-size:15px;margin-top:20px;">Peças do pedido</h2>
     <div id="np-pecas-lista"></div>
-    <button class="btn ghost block" style="margin-top:8px;" onclick="npAbrirSeletorPeca()">+ Adicionar peça</button>
+    <div class="row" style="gap:8px;margin-top:8px;"><button class="btn ghost" style="flex:1" onclick="npAbrirSeletorPeca()">+ Adicionar peça</button><button class="btn ghost" style="flex:1" onclick="npAbrirSeletorKit()">📦 Adicionar kit</button></div>
 
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarNovoPedido()">Criar pedido</button>
     <p id="np-msg" class="error"></p>
@@ -1165,13 +1303,16 @@ async function salvarNovoPedido(){
   if(error){ msg.textContent = error.message; return; }
 
   if(npPecas.length){
-    const linhas = npPecas.map(p => ({
+    const kitLinhas = [];
+    for(const k of npPecas.filter(p=>p.kit)) kitLinhas.push(...(await linhasDoKit(k.kit_id, k.quantidade, k)).map(l => ({ ...l, pedido_id: data.id })));
+    const linhas = npPecas.filter(p=>!p.kit).map(p => ({
       pedido_id: data.id, ficha_id: p.ficha_id, quantidade: p.quantidade,
       dia_producao: p.dia_producao, costureira_id: p.costureira_id, faccionista_id: p.faccionista_id,
       valor_costureira: p.valor_costureira, valor_faccionista: p.valor_faccionista,
       com_plastico: !!p.com_plastico, servico_id: p.servico_id || null,
+      valor_venda: p.ficha ? (p.ficha.preco_venda ?? null) : null,
     }));
-    const { error: errPecas } = await sb.from('pecas').insert(linhas);
+    const { error: errPecas } = await sb.from('pecas').insert([...linhas, ...kitLinhas]);
     if(errPecas){ msg.textContent = 'Pedido criado, mas houve erro ao salvar as peças: ' + errPecas.message; }
   }
   npPecas = []; npFormCache = null;
@@ -1208,18 +1349,7 @@ async function salvarCliente(clienteId, pedidoId){
   if(error){ document.getElementById('ec-msg').textContent = error.message; return; }
   closeModal(); abrirPedido(pedidoId);
 }
-async function abrirPedido(id){
-  const { data: pedido } = await sb.from('pedidos').select('*, clientes(*)').eq('id', id).single();
-  const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
-  { const sids = [...new Set((pecas||[]).map(p=>p.servico_id).filter(Boolean))]; window._nivelNome = {};
-    if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => window._nivelNome[x.id] = x.nome); } }
-  showModal(`
-    <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
-    ${clienteCardHtml(pedido.clientes, id)}
-    <p class="muted">Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
-    <h2 style="font-size:15px;margin-top:18px;">Peças</h2>
-    <div id="pedido-pecas">
-      ${(pecas||[]).map(p=>`
+function pecaItemHtml(p){ return `
         <div class="item">
           <div style="display:flex;gap:10px;align-items:center;">
             ${fichaThumbImg(p.fichas_tecnicas, 40)}
@@ -1230,14 +1360,57 @@ async function abrirPedido(id){
           </div>
           <button class="btn ghost sm" onclick="closeModal(); editarPeca('${p.id}')">Editar</button>
         </div>
-      `).join('') || '<p class="muted">Nenhuma peça ainda.</p>'}
-    </div>
-    <button class="btn block" style="margin-top:14px;" onclick="adicionarPeca('${id}')">+ Adicionar peça</button>
+`; }
+function vendaLinha(p){ return (Number(p.valor_venda)||0)*(Number(p.quantidade)||0)*(1-(Number(p.desconto_pct)||0)/100); }
+function pedidoPecasHtml(pecas, pedidoId){
+  if(!pecas.length) return '<p class="muted">Nenhuma peça ainda.</p>';
+  const grupos = {}, avulsas = [];
+  pecas.forEach(p => { if(p.kit_grupo){ (grupos[p.kit_grupo] = grupos[p.kit_grupo] || []).push(p); } else avulsas.push(p); });
+  const nomeKit = window._kitNome || {};
+  return Object.values(grupos).map(g => { const k = g[0], tot = g.reduce((s,p)=>s+vendaLinha(p),0);
+    return `<details class="card" style="margin:8px 0;padding:10px 12px;"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px;">
+      <strong>📦 ${escAttr(nomeKit[k.kit_id]||'Kit')} × ${k.kit_qtd||1}</strong><strong>${money(tot)}</strong></summary>
+      <div class="muted" style="font-size:12px;margin:4px 0;">${k.desconto_pct?`desconto ${k.desconto_pct}% · `:''}toque para ver as peças</div>
+      ${g.map(pecaItemHtml).join('')}
+      <button class="btn sm ghost" style="color:var(--danger);margin-top:6px;" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">Tirar este kit do pedido</button></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
+}
+async function removerKitPedido(grupo, pedidoId){
+  if(!confirm('Tirar este kit (e todas as peças dele) do pedido?')) return;
+  const { error } = await sb.from('pecas').delete().eq('kit_grupo', grupo);
+  if(error){ alert(error.message); return; }
+  closeModal(); abrirPedido(pedidoId);
+}
+function pedidoValoresRender(pedido, pecas){
+  const div = document.getElementById('pedido-valores'); if(!div) return;
+  const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), liq = pecas.reduce((s,p)=>s+vendaLinha(p),0);
+  const semPreco = pecas.filter(p=>p.valor_venda==null).length;
+  const L = (a,b,bold)=>`<div style="display:flex;justify-content:space-between;${bold?'font-weight:700;font-size:17px;':''}"><span>${a}</span><span>${b}</span></div>`;
+  div.innerHTML = `<strong>💰 Valores</strong>` + L('Soma das peças', money(bruto)) + (bruto-liq>0.009?L('Desconto dos kits', '− '+money(bruto-liq)):'') + L('Total do pedido', money(liq), true) +
+    (semPreco?`<div class="muted" style="font-size:12px;">${semPreco} peça(s) sem preço de venda (coloque no produto ou em Editar da peça)</div>`:'') +
+    `<div id="pedido-lucro" class="muted" style="font-size:13px;margin-top:6px;"></div>`;
+  custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0); const el = document.getElementById('pedido-lucro'); if(el) el.innerHTML = `Custo estimado ${money(custo)} · <b>Lucro ${money(liq-custo)}</b>`; });
+}
+async function abrirPedido(id){
+  const { data: pedido } = await sb.from('pedidos').select('*, clientes(*)').eq('id', id).single();
+  const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
+  { const kids = [...new Set((pecas||[]).map(p=>p.kit_id).filter(Boolean))]; window._kitNome = {};
+    if(kids.length){ const { data: ks } = await sb.from('kits').select('id,nome').in('id', kids); (ks||[]).forEach(x => window._kitNome[x.id] = x.nome); } }
+  { const sids = [...new Set((pecas||[]).map(p=>p.servico_id).filter(Boolean))]; window._nivelNome = {};
+    if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => window._nivelNome[x.id] = x.nome); } }
+  showModal(`
+    <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
+    ${clienteCardHtml(pedido.clientes, id)}
+    <p class="muted">Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
+    <h2 style="font-size:15px;margin-top:18px;">Peças</h2>
+    <div id="pedido-pecas">${pedidoPecasHtml(pecas||[], id)}</div>
+    <div id="pedido-valores" class="card" style="margin-top:12px;"></div>
+    <div class="row" style="gap:8px;margin-top:14px;"><button class="btn" style="flex:1" onclick="adicionarPeca('${id}')">+ Adicionar peça</button><button class="btn" style="flex:1" onclick="adicionarKitPedido('${id}')">📦 Adicionar kit</button></div>
     <details style="margin-top:16px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🪡 Bordados deste pedido</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🧵 Materiais deste pedido</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
   `);
   materiaisDoPedido(pecas||[]);
   bordadosDoPedido(pecas||[]);
+  pedidoValoresRender(pedido, pecas||[]);
 }
 // soma os bordados (por parte) das peças do pedido
 async function bordadosDoPedido(pecas){
@@ -1326,7 +1499,8 @@ async function salvarPeca(pedidoId){
   if(costureira_id && nv && nv.servico_id && valor_costureira == null) valor_costureira = await valorCostureiraServico(costureira_id, nv.servico_id);
   const { error } = await sb.from('pecas').insert({
     pedido_id: pedidoId, ficha_id, quantidade, dia_producao, costureira_id, faccionista_id, valor_costureira, valor_faccionista,
-    com_plastico, servico_id: nv ? nv.servico_id : null
+    com_plastico, servico_id: nv ? nv.servico_id : null,
+    valor_venda: ((window._pcFichasCache||[]).find(x=>x.id===ficha_id)||{}).preco_venda ?? null
   });
   if(error){ msg.textContent = error.message; return; }
   closeModal();
