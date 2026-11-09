@@ -435,8 +435,9 @@ async function custosFichas(ids){
     sb.from('fichas_tecnicas').select('id,revenda,custo_compra,custo_corte,servico_id').in('id', ids),
     sb.from('ficha_materiais').select('ficha_id,quantidade_por_unidade,materiais(preco,embalagem,qtd_por_embalagem)').in('ficha_id', ids),
     sb.from('ficha_bordados').select('ficha_id,quantidade,bordado:fichas_tecnicas!ficha_bordados_bordado_id_fkey(custo_bordado)').in('ficha_id', ids),
-    sb.from('precos_tabela').select('ficha_id,valor').eq('tabela', 1)]);
-  const mo = {}; (pt||[]).forEach(r => mo[r.ficha_id] = Number(r.valor));
+    sb.from('precos_tabela').select('ficha_id,valor,tabela')]);
+  // mão de obra: Tabela 1; se o serviço só tem Tabela 2 (ex.: pastas da Leidis), usa a Tabela 2
+  const mo = {}; (pt||[]).filter(r=>Number(r.tabela)===2).forEach(r => mo[r.ficha_id] = Number(r.valor)); (pt||[]).filter(r=>Number(r.tabela)===1).forEach(r => mo[r.ficha_id] = Number(r.valor));
   (fs||[]).forEach(f => {
     if(f.revenda){ out[f.id] = Number(f.custo_compra)||0; return; }
     let c = Number(f.custo_corte)||0;
@@ -561,7 +562,7 @@ async function kitRender(){
   const cs = await custosFichas(window._kitItens.map(i=>i.ficha_id)); const custo = window._kitItens.reduce((s,i)=>s+(cs[i.ficha_id]||0)*i.quantidade,0);
   const L = (a,b,bold)=>`<div style="display:flex;justify-content:space-between;${bold?'font-weight:700;font-size:16px;':''}"><span>${a}</span><span>${b}</span></div>`;
   tbox.innerHTML = L('Soma das peças', money(sub)) + (d?L(`Desconto ${d}%`, '− '+money(sub-tot)):'') + L('Preço do kit', money(tot), true) +
-    `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">${L('Custo do kit (Tabela 1)', money(custo))}${L('Lucro', money(tot-custo), true)}</div>` +
+    `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">${L('Custo do kit (material + bordado + corte + mão de obra)', money(custo))}${L('Lucro', money(tot-custo), true)}</div>` +
     (fixo==null && semPreco.length?`<div class="muted" style="font-size:12px;">Sem preço de venda: ${semPreco.map(escAttr).join(', ')} (coloque no produto)</div>`:'');
 }
 async function salvarKit(kitId){
