@@ -658,15 +658,15 @@ async function renderProdutos(){
       ${chipsHtml(tipos, state.produtos.tipoId, 'selecionarTipoProduto')}
     </div>
 
-    <h2 style="font-size:15px;margin-top:22px;">Rito</h2>
+    <h2 style="font-size:15px;margin-top:22px;">${grupoPot==='filosofica'?'Grau':'Rito'}</h2>
     <div class="row">
-      <input id="prod-busca-rito" placeholder="Buscar ou digitar novo rito..." oninput="filtrarChips('prod-busca-rito','prod-lista-rito')">
+      <input id="prod-busca-rito" placeholder="Buscar ou digitar novo ${grupoPot==='filosofica'?'grau':'rito'}..." oninput="filtrarChips('prod-busca-rito','prod-lista-rito')">
       <button class="btn ghost sm" onclick="criarRitoProduto()">+ Adicionar</button>
     </div>
     <div id="prod-lista-rito" class="chips">
       ${chipsHtml(ritos, state.produtos.ritoId, 'selecionarRitoProduto')}
     </div>
-    ${state.produtos.ritoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.ritoId=null; state.produtos.cargoId=null; loadTab();">Limpar rito selecionado</a></p>` : ''}
+    ${state.produtos.ritoId ? `<p class="muted" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); state.produtos.ritoId=null; state.produtos.cargoId=null; loadTab();">Limpar ${grupoPot==='filosofica'?'grau':'rito'} selecionado</a></p>` : ''}
     `;
   }
 
