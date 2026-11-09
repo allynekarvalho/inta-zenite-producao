@@ -594,7 +594,7 @@ async function uploadParaStorage(prefixoPasta, file){
 }
 
 // ===== Lista de materiais do produto (reaproveita o cadastro de Materiais/estoque) =====
-const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Bordados','Outro'];
+const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Bordados','Corpos e abetas','Outro'];
 function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-'); }
 window._pmSel = window._pmSel || {};
 
@@ -1877,7 +1877,7 @@ function filtrarEstoque(){
           </div>
         </div>
         <div class="row" style="margin-top:10px;">
-          <button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>
+          ${m.categoria==='Corpos e abetas' ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">+ Produzi (corte/bordado)</button>` : `<button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>`}
           <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
         </div>
       </div>`; }).join('')}
@@ -2048,11 +2048,60 @@ async function editarMaterial(id){
   showModal(`
     <h2>${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     ${formMaterialHtml('em', m, fornecedores, opcoesComFoto)}
+    ${m.categoria==='Corpos e abetas' ? `<label style="margin-top:14px;">🧾 Do que é feito (por peça)</label><div id="rec-box" class="card muted">Carregando...</div>` : ''}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoMaterial('${id}')">Salvar</button>
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirMaterial('${id}')">Excluir material</button>
     <p id="em-msg" class="error"></p>
   `);
   atualizarEmbForm('em');
+  if(m.categoria==='Corpos e abetas') receitaRender(id);
+}
+// ===== Corpos e abetas: receita (do que é feito) e produção =====
+async function receitaRender(compId){
+  const box = document.getElementById('rec-box'); if(!box) return;
+  const [{ data: rec }, { data: mats }] = await Promise.all([
+    sb.from('material_receita').select('id,material_id,quantidade').eq('componente_id', compId),
+    sb.from('materiais').select('id,nome,unidade,preco,embalagem,qtd_por_embalagem,categoria').order('nome')]);
+  const mm = {}; (mats||[]).forEach(x => mm[x.id] = x);
+  let custo = 0;
+  box.classList.remove('muted');
+  box.innerHTML = (rec||[]).map(r => { const x = mm[r.material_id]||{}; const cu = custoUnit(x); if(cu!=null) custo += cu*Number(r.quantidade);
+    return `<div class="item" style="gap:8px;"><span style="flex:1">${escAttr(x.nome||'?')}</span>
+      <input inputmode="decimal" style="width:80px;text-align:right;" value="${String(r.quantidade).replace('.',',')}" onchange="receitaQtd('${r.id}',this.value,'${compId}')"><span class="muted" style="font-size:12px;">${x.unidade||''}</span>
+      <button class="btn sm ghost" style="color:var(--danger);" onclick="receitaTirar('${r.id}','${compId}')">✕</button></div>`; }).join('') +
+    `<div class="row" style="gap:6px;margin-top:8px;"><select id="rec-mat" style="flex:2"><option value="">+ material...</option>${(mats||[]).filter(x=>x.categoria!=='Corpos e abetas').map(x=>`<option value="${x.id}">${escAttr(x.nome)}</option>`).join('')}</select>
+      <input id="rec-q" inputmode="decimal" placeholder="qtd" style="flex:1"><button class="btn sm" onclick="receitaAdd('${compId}')">Adicionar</button></div>
+     <div style="display:flex;justify-content:space-between;margin-top:8px;"><strong>Custo por peça</strong><strong>${money(custo)}</strong></div>`;
+  await sb.from('materiais').update({ preco: +custo.toFixed(2), embalagem: null, qtd_por_embalagem: null }).eq('id', compId);
+}
+async function receitaQtd(id, v, compId){ await sb.from('material_receita').update({ quantidade: Number(String(v).replace(',','.'))||0 }).eq('id', id); receitaRender(compId); }
+async function receitaTirar(id, compId){ await sb.from('material_receita').delete().eq('id', id); receitaRender(compId); }
+async function receitaAdd(compId){
+  const mid = document.getElementById('rec-mat').value, q = Number(String(document.getElementById('rec-q').value).replace(',','.'))||0;
+  if(!mid || !q){ alert('Escolha o material e a quantidade.'); return; }
+  const { error } = await sb.from('material_receita').upsert({ componente_id: compId, material_id: mid, quantidade: q }, { onConflict: 'componente_id,material_id' });
+  if(error){ alert(error.message); return; }
+  receitaRender(compId);
+}
+function produziComponente(id){
+  const m = (window._estoqueCache||[]).find(x=>x.id===id) || {};
+  showModal(`<h2>${escAttr(m.nome||'')} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <p class="muted" style="font-size:13px;">Quantas peças foram cortadas/bordadas? O estoque desta peça sobe e os materiais usados (tecido, nylon...) dão baixa sozinhos.</p>
+    <label>Quantidade</label><input id="pz-qtd" type="number" min="1" inputmode="numeric">
+    <button class="btn block gold" style="margin-top:12px;" onclick="salvarProduzi('${id}')">Lançar</button><p id="pz-msg" class="error"></p>`);
+}
+async function salvarProduzi(id){
+  const q = Number(document.getElementById('pz-qtd').value)||0, msg = document.getElementById('pz-msg');
+  if(!q){ msg.textContent = 'Informe a quantidade.'; return; }
+  const { data: m } = await sb.from('materiais').select('estoque_atual').eq('id', id).single();
+  const { data: rec } = await sb.from('material_receita').select('material_id,quantidade').eq('componente_id', id);
+  for(const r of (rec||[])){
+    const { data: x } = await sb.from('materiais').select('estoque_atual').eq('id', r.material_id).single();
+    await sb.from('materiais').update({ estoque_atual: +((Number(x&&x.estoque_atual)||0) - Number(r.quantidade)*q).toFixed(3) }).eq('id', r.material_id);
+  }
+  const { error } = await sb.from('materiais').update({ estoque_atual: (Number(m&&m.estoque_atual)||0) + q }).eq('id', id);
+  if(error){ msg.textContent = error.message; return; }
+  closeModal(); loadTab();
 }
 async function salvarEdicaoMaterial(id){
   const msg = document.getElementById('em-msg');
