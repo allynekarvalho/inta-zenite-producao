@@ -43,7 +43,7 @@
   html{height:100%;}
   *{box-sizing:border-box;}
   html,body{overflow-x:hidden;}
-  input[type=date]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;box-sizing:border-box;display:block;}
+  input[type=date],input[type=month]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;box-sizing:border-box;display:block;}
   .card,.modal{overflow-wrap:anywhere;}
   body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:640px;margin:0 auto;padding:20px 16px 96px;}
@@ -278,7 +278,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 09/11 17:55</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 11:50</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1950,9 +1950,9 @@ async function abrirPessoa(id){
     <div class="card" style="margin-top:10px;">
       <strong style="font-size:13px;">💼 Salário e vales</strong>
       <div class="muted" style="font-size:12px;">Salário ${money(pessoa.salario||0)} · VT ${money(pessoa.vt_passagem||0)} × ${pessoa.vt_por_dia??2}/dia · VA ${money(pessoa.va_por_dia||0)}/dia</div>
-      <div class="row" style="gap:8px;">
-        <div style="flex:1"><label>Mês do salário</label><input id="pl-mes" type="month" value="${mesAnterior(todayISO().slice(0,7))}" oninput="plDiasMes();plSalPrev()"></div>
-        <div style="flex:1"><label id="pl-dias-lbl">Dias úteis de ${nomeMes(todayISO().slice(0,7))} (VT/VA)</label><input id="pl-dias" type="number" min="0" value="${diasUteisMes(todayISO().slice(0,7))}" oninput="plSalPrev()"></div>
+      <div class="row" style="gap:8px;align-items:flex-end;">
+        <div style="flex:1;min-width:0;"><label>Mês do salário</label><input id="pl-mes" type="month" value="${mesAnterior(todayISO().slice(0,7))}" oninput="plDiasMes();plSalPrev()"></div>
+        <div style="flex:1;min-width:0;"><label id="pl-dias-lbl">Dias úteis ${nomeMes(todayISO().slice(0,7))}</label><input id="pl-dias" type="number" min="0" value="${diasUteisMes(todayISO().slice(0,7))}" oninput="plSalPrev()"></div>
       </div>
       <div class="row" style="gap:8px;">
         <div style="flex:1"><label>Faltas sem motivo</label><input id="pl-faltas" type="number" min="0" value="0" oninput="plSalPrev()"></div>
@@ -1987,7 +1987,7 @@ function plDiasMes(){
   const mes = document.getElementById('pl-mes').value; if(!mes) return;
   const prox = mesSeguinte(mes);
   document.getElementById('pl-dias').value = diasUteisMes(prox);
-  document.getElementById('pl-dias-lbl').textContent = 'Dias úteis de '+nomeMes(prox)+' (VT/VA)';
+  document.getElementById('pl-dias-lbl').textContent = 'Dias úteis '+nomeMes(prox);
 }
 function plSalCalc(){
   const p = window._plPessoaFull || {}, uteis = Number((document.getElementById('pl-dias')||{}).value)||0, faltas = Number((document.getElementById('pl-faltas')||{}).value)||0, atest = Number((document.getElementById('pl-atest')||{}).value)||0, dias = Math.max(0, uteis - faltas - atest);
