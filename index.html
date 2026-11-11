@@ -279,7 +279,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 22:40</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1605,18 +1605,19 @@ async function salvarCliente(clienteId, pedidoId){
   if(error){ document.getElementById('ec-msg').textContent = error.message; return; }
   closeModal(); abrirPedido(pedidoId);
 }
-function pecaItemHtml(p){ return `
-        <div class="item">
-          <div style="display:flex;gap:10px;align-items:center;">
-            ${fichaThumbImg(p.fichas_tecnicas, 40)}
-            <div>
-              <strong>${p.fichas_tecnicas?.nome||'Peça'}</strong> ×${p.quantidade}${p.com_plastico?' <span class="pill">plástico</span>':''}${(window._nivelNome||{})[p.servico_id]?` <span class="pill">${window._nivelNome[p.servico_id].replace(/^.* · /,'')}</span>`:''}
-              <div class="muted">${p.dia_producao?('Produção: '+fmtDate(p.dia_producao)):'Sem data definida'} · <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span></div>
-            </div>
-          </div>
-          <button class="btn ghost sm" onclick="closeModal(); editarPeca('${p.id}')">Editar</button>
-        </div>
-`; }
+function pecaItemHtml(p){
+  const niv = (window._nivelNome||{})[p.servico_id], v = vendaLinha(p);
+  return `<div class="item" onclick="closeModal(); editarPeca('${p.id}')" style="cursor:pointer;gap:10px;">
+    <div style="display:flex;gap:10px;align-items:center;min-width:0;flex:1;">
+      ${fichaThumbImg(p.fichas_tecnicas, 44)}
+      <div style="min-width:0;">
+        <div><strong>${escAttr(p.fichas_tecnicas?.nome||'Peça')}</strong> <span class="muted">×${p.quantidade}</span></div>
+        <div class="muted" style="font-size:12.5px;">${[niv?niv.replace(/^.* · /,''):'', p.com_plastico?'plástico':'', STATUS_LABEL[p.status]].filter(Boolean).join(' · ')}</div>
+      </div>
+    </div>
+    ${p.kit_grupo ? '' : (p.valor_venda!=null ? `<strong style="white-space:nowrap;">${money(v)}</strong>` : '<span style="color:var(--danger);font-size:12px;white-space:nowrap;">sem preço</span>')}
+  </div>`; }
+
 function vendaLinha(p){ return (Number(p.valor_venda)||0)*(Number(p.quantidade)||0)*(1-(Number(p.desconto_pct)||0)/100); }
 function pedidoPecasHtml(pecas, pedidoId){
   if(!pecas.length) return '<p class="muted">Nenhuma peça ainda.</p>';
@@ -1626,9 +1627,8 @@ function pedidoPecasHtml(pecas, pedidoId){
   return Object.values(grupos).map(g => { const k = g[0], tot = g.reduce((s,p)=>s+vendaLinha(p),0);
     return `<details class="card" style="margin:8px 0;padding:10px 12px;"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px;">
       <strong>📦 ${escAttr(nomeKit[k.kit_id]||'Kit')} × ${k.kit_qtd||1}</strong><strong>${money(tot)}</strong></summary>
-      <div class="muted" style="font-size:12px;margin:4px 0;">${Number(k.desconto_pct)?`desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}% · `:''}toque para ver as peças</div>
+      <div class="muted" style="font-size:12px;margin:2px 0;">${money(tot/(k.kit_qtd||1))} cada${Number(k.desconto_pct)?` · desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}%`:''} · ver peças ›</div>
       ${g.map(pecaItemHtml).join('')}
-      <div class="muted" style="font-size:13px;margin-top:6px;">Cada kit: <b>${money(tot/(k.kit_qtd||1))}</b></div>
       <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do kit</button><button class="btn sm" onclick="descontoKitPedido('${k.kit_grupo}','${pedidoId}')">% Desconto</button>
       <button class="btn sm ghost" style="color:var(--danger);" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">Tirar este kit do pedido</button></div></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
 }
@@ -1673,14 +1673,13 @@ async function pedidoPagRender(pedido, total){
     <button class="btn block" style="margin-top:8px;" onclick="registrarPagPedido('${pedido.id}', ${falta.toFixed(2)}, '${escAttr(pedido.forma_pagamento||'')}')">+ Registrar pagamento</button>`;
 }
 function registrarPagPedido(pedidoId, falta, forma){
-  const box = document.getElementById('pedido-pag');
-  box.insertAdjacentHTML('beforeend', `<div id="pp-form" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+  const box = document.getElementById('pp-area');
+  box.innerHTML = (`<div id="pp-form" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
     <div class="row" style="gap:8px;"><div style="flex:1"><label>Valor (R$)</label><input id="pp-valor" inputmode="decimal" value="${falta>0?String(falta).replace('.',','):''}"></div>
     <div style="flex:1"><label>Data</label><input type="date" id="pp-data" value="${hojeISO()}"></div></div>
     <label>Forma</label><select id="pp-forma">${formasPagHtml(forma)}</select>
     <label>Observação</label><input id="pp-obs" placeholder="Ex.: sinal, 2ª parcela...">
     <button class="btn block gold" style="margin-top:8px;" onclick="salvarPagPedido('${pedidoId}')">Salvar pagamento</button></div>`);
-  const b = box.querySelector('button.btn.block:not(.gold)'); if(b) b.style.display='none';
 }
 async function salvarPagPedido(pedidoId){
   const valor = numBR(document.getElementById('pp-valor').value);
@@ -1694,16 +1693,22 @@ async function excluirPagPedido(id, pedidoId){
   if(!confirm('Excluir este pagamento?')) return;
   await sb.from('pedido_pagamentos').delete().eq('id', id); abrirPedido(pedidoId);
 }
-function pedidoValoresRender(pedido, pecas){
+async function pedidoValoresRender(pedido, pecas){
   const div = document.getElementById('pedido-valores'); if(!div) return;
   const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), liq = pecas.reduce((s,p)=>s+vendaLinha(p),0);
   const semPreco = pecas.filter(p=>p.valor_venda==null).length;
-  const L = (a,b,bold)=>`<div style="display:flex;justify-content:space-between;${bold?'font-weight:700;font-size:17px;':''}"><span>${a}</span><span>${b}</span></div>`;
-  div.innerHTML = `<strong>💰 Valores</strong>` + L('Soma das peças', money(bruto)) + (bruto-liq>0.009?L('Desconto dos kits', '− '+money(bruto-liq)):'') + L('Total do pedido', money(liq), true) +
-    (semPreco?`<div class="muted" style="font-size:12px;">${semPreco} peça(s) sem preço de venda (coloque no produto ou em Editar da peça)</div>`:'') +
-    `<div id="pedido-lucro" class="muted" style="font-size:13px;margin-top:6px;"></div>`;
-  pedidoPagRender(pedido, liq);
-  custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0); const el = document.getElementById('pedido-lucro'); if(el) el.innerHTML = `Custo estimado ${money(custo)} · <b>Lucro ${money(liq-custo)}</b>`; });
+  const { data: pg } = await sb.from('pedido_pagamentos').select('*').eq('pedido_id', pedido.id).order('data');
+  const pago = (pg||[]).reduce((s,x)=>s+Number(x.valor||0),0), falta = Math.max(0, liq - pago);
+  const L = (a,b,st)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;${st||''}"><span>${a}</span><span>${b}</span></div>`;
+  div.innerHTML = `
+    ${bruto-liq>0.009 ? L('<span class="muted">Desconto</span>', `<span class="muted">− ${money(bruto-liq)}</span>`) : ''}
+    ${L('Total do pedido', `<b>${money(liq)}</b>`)}
+    ${(pg||[]).map(x=>L(`<span class="muted" style="font-size:13px;">Pago ${fmtDate(x.data)}${x.forma?' · '+escAttr(x.forma):''}${x.obs?' · '+escAttr(x.obs):''} <a href="#" style="color:var(--danger);" onclick="event.preventDefault();excluirPagPedido('${x.id}','${pedido.id}')">✕</a></span>`, `<span class="muted">− ${money(x.valor)}</span>`)).join('')}
+    ${liq>0 ? L(falta>0.009?'<b>Falta receber</b>':'<b>✅ Pago</b>', `<b style="font-size:19px;${falta>0.009?'color:var(--danger);':'color:var(--ok);'}">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:6px;padding-top:8px;') : ''}
+    ${semPreco?`<div style="font-size:12px;color:var(--danger);margin-top:4px;">${semPreco} peça(s) sem preço — toque na peça para colocar</div>`:''}
+    <div id="pp-area"><button class="btn block" style="margin-top:10px;" onclick="registrarPagPedido('${pedido.id}', ${falta.toFixed(2)}, '${escAttr(pedido.forma_pagamento||'')}')">+ Registrar pagamento</button></div>`;
+  custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0); const el = document.getElementById('pedido-lucro');
+    if(el) el.innerHTML = L('Custo estimado', money(custo)) + L('<b>Lucro</b>', `<b style="color:${liq-custo>=0?'var(--ok)':'var(--danger)'};">${money(liq-custo)}</b>`) + (liq>0?`<div class="muted" style="font-size:12px;">Margem ${Math.round((liq-custo)/liq*100)}%</div>`:''); });
 }
 function linkPedido(token){ return location.origin + location.pathname.replace(/[^/]*$/, '') + 'pedido/?t=' + token; }
 async function enviarPedidoCliente(id){
@@ -1726,18 +1731,26 @@ async function abrirPedido(id){
     if(kids.length){ const { data: ks } = await sb.from('kits').select('id,nome').in('id', kids); (ks||[]).forEach(x => window._kitNome[x.id] = x.nome); } }
   { const sids = [...new Set((pecas||[]).map(p=>p.servico_id).filter(Boolean))]; window._nivelNome = {};
     if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => window._nivelNome[x.id] = x.nome); } }
+  const pz = prazoInfo(pedido.prazo), cli = pedido.clientes || {};
   showModal(`
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
-    ${clienteCardHtml(pedido.clientes, id)}
-    <p class="muted">Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
-    <div class="row" style="gap:8px;"><button class="btn" style="flex:1" onclick="enviarPedidoCliente('${id}')">🔗 Enviar ao cliente</button><button class="btn ghost" onclick="copiarLinkPedido('${id}')">Copiar link</button></div>
-    <h2 style="font-size:15px;margin-top:18px;">Peças</h2>
-    <div id="pedido-pecas">${pedidoPecasHtml(pecas||[], id)}</div>
-    <div id="pedido-valores" class="card" style="margin-top:12px;"></div>
-    <div id="pedido-pag" class="card" style="margin-top:10px;"></div>
-    <div class="row" style="gap:8px;margin-top:14px;"><button class="btn" style="flex:1" onclick="adicionarPeca('${id}')">+ Adicionar peça</button><button class="btn" style="flex:1" onclick="adicionarKitPedido('${id}')">📦 Adicionar kit</button></div>
-    <details style="margin-top:16px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🪡 Bordados deste pedido</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>
-    <details style="margin-top:6px;"><summary style="cursor:pointer;font-weight:600;padding:6px 0;">🧵 Materiais deste pedido</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-top:-4px;">
+      <div><div style="font-size:17px;font-weight:600;">${escAttr(cli.nome||'Sem cliente')}</div>
+        <div style="font-size:13px;${pz?`color:${pz.cor};font-weight:600;`:''}">${pedido.urgente?'⚡ Urgente · ':''}${pz?pz.txt:'Sem prazo'}</div></div>
+      ${cli.id?`<button class="btn sm ghost" onclick="editarCliente('${cli.id}','${id}')">Editar</button>`:''}
+    </div>
+    <div class="row" style="gap:8px;margin-top:12px;"><button class="btn" style="flex:1" onclick="enviarPedidoCliente('${id}')">🔗 Enviar ao cliente</button><button class="btn ghost" title="Copiar link" style="flex:0 0 auto;width:auto;padding:0 16px;" onclick="copiarLinkPedido('${id}')">📋 Link</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;">
+      <h2 style="font-size:15px;margin:0;">Peças</h2>
+      <div style="display:flex;gap:6px;"><button class="btn sm" onclick="adicionarPeca('${id}')">+ Peça</button><button class="btn sm" onclick="adicionarKitPedido('${id}')">+ Kit</button></div>
+    </div>
+    <div id="pedido-pecas" style="margin-top:4px;">${pedidoPecasHtml(pecas||[], id)}</div>
+    <div id="pedido-valores" class="card" style="margin-top:14px;"></div>
+    <details class="card" style="margin-top:10px;padding:10px 14px;"><summary style="cursor:pointer;font-weight:600;list-style:none;">📊 Custos e lucro <span class="muted" style="font-weight:400;font-size:12px;">· só você vê ›</span></summary>
+      <div id="pedido-lucro" style="font-size:14px;margin-top:8px;">Calculando...</div>
+      <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13.5px;">🪡 Bordados</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>
+      <details style="margin-top:4px;"><summary style="cursor:pointer;font-size:13.5px;">🧵 Materiais</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
+    </details>
   `);
   materiaisDoPedido(pecas||[]);
   bordadosDoPedido(pecas||[]);
