@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 11/11 01:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 11/11 01:10</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1368,10 +1368,9 @@ async function abrirNovoPedido(){
     <div id="np-area">
     <label>Nome</label><input id="np-nome" list="np-clis" placeholder="Irmão, Loja ou Potência" autocomplete="off" onchange="npAchaTel()">
     <datalist id="np-clis">${(clis||[]).map(c=>`<option value="${escAttr(c.nome)}">`).join('')}</datalist>
-    <div class="row" style="gap:8px;">
-      <div style="flex:1;min-width:0;"><label>Telefone</label><input id="np-tel" type="tel" placeholder="WhatsApp"></div>
-      <div style="flex:1;min-width:0;"><label>Data para entrega</label><input id="np-prazo" type="date"></div>
-    </div>
+    <a href="#" id="np-tel-link" style="font-size:13px;display:inline-block;margin-top:6px;" onclick="event.preventDefault();this.style.display='none';document.getElementById('np-tel-box').style.display='block';">+ telefone (opcional)</a>
+    <div id="np-tel-box" style="display:none;"><label>Telefone</label><input id="np-tel" type="tel" placeholder="(65) 99999-9999"></div>
+    <label>Data para entrega</label><input id="np-prazo" type="date">
     ${selHtml()}
     <div style="position:sticky;bottom:-28px;background:var(--bg);padding:10px 0 4px;margin-top:8px;border-top:1px solid var(--border);">
       <div id="sel-resumo"></div>
@@ -1382,7 +1381,7 @@ async function abrirNovoPedido(){
 async function npAchaTel(){
   const nome = document.getElementById('np-nome').value.trim(); if(!nome) return;
   const { data } = await sb.from('clientes').select('telefone').ilike('nome', nome).limit(1);
-  const t = document.getElementById('np-tel'); if(data && data[0] && data[0].telefone && t && !t.value) t.value = data[0].telefone;
+  const t = document.getElementById('np-tel'); if(data && data[0] && data[0].telefone && t && !t.value) t.value = data[0].telefone; if(data && data[0] && data[0].telefone){ const l = document.getElementById('np-tel-link'); if(l) l.textContent = '✓ telefone já cadastrado'; }
 }
 async function npFechar(){
   const msg = document.getElementById('np-msg'), nome = document.getElementById('np-nome').value.trim(), telefone = document.getElementById('np-tel').value.trim() || null, prazo = document.getElementById('np-prazo').value || null;
