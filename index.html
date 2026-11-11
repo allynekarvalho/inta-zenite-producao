@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 11/11 05:55</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 11/11 06:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -334,33 +334,88 @@ async function renderProducao(){
   const pessoas = {}; { const [{ data: cs }, { data: fs }] = await Promise.all([sb.from('costureiras').select('id,nome'), sb.from('faccionistas').select('id,nome')]); (cs||[]).forEach(x=>pessoas[x.id]=x.nome); (fs||[]).forEach(x=>pessoas[x.id]=x.nome); }
   window._prodPecas = {}; lista.forEach(p => window._prodPecas[p.id] = p);
   if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => niv[x.id] = x.nome); }
-  const ordem = (a,b) => ((b.pedidos?.urgente?1:0) - (a.pedidos?.urgente?1:0)) || String(a.pedidos?.prazo||'9999').localeCompare(String(b.pedidos?.prazo||'9999'));
   const fmtQ = (q,u) => (Math.round(q*100)/100).toLocaleString('pt-BR') + ' ' + (u||'');
-  const card = p => {
-    const f = p.fichas_tecnicas || {}, pz = prazoInfo(p.pedidos?.prazo), quem = p.costureiras?.nome || p.faccionistas?.nome || '—';
-    const mats = (f.ficha_materiais||[]).filter(m=>m.materiais).map(m => `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>${escAttr(m.materiais.nome)}${m.materiais.cor?` <span class="muted">${escAttr(m.materiais.cor)}</span>`:''}</span><b style="white-space:nowrap;">${fmtQ((Number(m.quantidade_por_unidade)||0)*(Number(p.quantidade)||0), m.materiais.unidade)}</b></div>`).join('');
-    return `<div class="card">
+  // agrupa por pedido (ordem de produção), sem cliente e sem valor
+  const ords = {}; lista.forEach(p => { (ords[p.pedido_id] = ords[p.pedido_id] || { pedido: p.pedidos||{}, pecas: [] }).pecas.push(p); });
+  const ordList = Object.entries(ords).sort((a,b) => ((b[1].pedido.urgente?1:0)-(a[1].pedido.urgente?1:0)) || String(a[1].pedido.prazo||'9999').localeCompare(String(b[1].pedido.prazo||'9999')));
+  window._ordens = {};
+  const item = p => {
+    const f = p.fichas_tecnicas || {}, ls = feito[p.id]||[], q = ls.reduce((s,l)=>s+(Number(l.quantidade)||0),0), tot = Number(p.quantidade)||0, pct = tot ? Math.min(100, Math.round(q/tot*100)) : 0;
+    const porP = {}; ls.forEach(l => { const n = pessoas[l.pessoa_id]||'?'; porP[n] = (porP[n]||0) + (Number(l.quantidade)||0); });
+    const mats = (f.ficha_materiais||[]).filter(m=>m.materiais).map(m => `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>${escAttr(m.materiais.nome)}${m.materiais.cor?` <span class="muted">${escAttr(m.materiais.cor)}</span>`:''}</span><b style="white-space:nowrap;">${fmtQ((Number(m.quantidade_por_unidade)||0)*tot, m.materiais.unidade)}</b></div>`).join('');
+    return `<div style="border-top:1px solid var(--border);padding:10px 0;">
       <div style="display:flex;gap:10px;align-items:flex-start;">
-        ${fichaThumbImg(f, 64)}
+        ${fichaThumbImg(f, 52)}
         <div style="flex:1;min-width:0;">
-          <strong>${escAttr(f.nome||'Peça')}</strong> ×${p.quantidade}${p.com_plastico?' <span class="muted">+ plástico</span>':''}
-          <div class="muted" style="font-size:13px;">Pedido #${p.pedidos?.numero||''}${niv[p.servico_id]?` · ${escAttr(niv[p.servico_id])}`:''}${quem!=='—'?` · ${escAttr(quem)}`:''}</div>
-          ${pz?`<div style="font-size:13px;font-weight:600;color:${pz.cor};">${p.pedidos?.urgente?'⚡ Urgente · ':''}${pz.txt}</div>`:''}
+          <strong>${escAttr(f.nome||'Peça')}</strong>
+          <div class="muted" style="font-size:12.5px;">Qtd ${tot}${niv[p.servico_id]?` · ${escAttr(niv[p.servico_id].replace(/^.* · /,''))}`:''}${p.com_plastico?' · com plástico':''}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><div style="flex:1;height:6px;border-radius:5px;background:var(--border);overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--ok,#2e7d4f);"></div></div><span style="font-size:12px;white-space:nowrap;"><b>${q}/${tot}</b> prontas</span></div>
+          ${ls.length?`<div class="muted" style="font-size:12px;">${Object.entries(porP).map(([n,v])=>`${escAttr(n)} ${v}`).join(' · ')} <a href="#" onclick="event.preventDefault();prodVerLanc('${p.id}')">editar</a></div>`:''}
         </div>
       </div>
-      ${(() => { const ls = feito[p.id]||[], q = ls.reduce((s,l)=>s+(Number(l.quantidade)||0),0), tot = Number(p.quantidade)||0, pct = tot ? Math.min(100, Math.round(q/tot*100)) : 0;
-        const porP = {}; ls.forEach(l => { const n = pessoas[l.pessoa_id]||'?'; porP[n] = (porP[n]||0) + (Number(l.quantidade)||0); });
-        return `<div style="margin-top:10px;"><div style="display:flex;justify-content:space-between;font-size:13px;"><b>Prontas: ${q} de ${tot}</b>${q<tot?`<span class="muted">faltam ${tot-q}</span>`:''}</div>
-          <div style="height:7px;border-radius:5px;background:var(--border);margin:4px 0;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--ok,#2e7d4f);"></div></div>
-          ${ls.length?`<div class="muted" style="font-size:12.5px;">${Object.entries(porP).map(([n,v])=>`${escAttr(n)} ${v}`).join(' · ')} <a href="#" onclick="event.preventDefault();prodVerLanc('${p.id}')">editar</a></div>`:''}</div>`; })()}
-      ${mats?`<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">🧵 Materiais para produzir</summary><div style="font-size:13px;margin-top:4px;">${mats}</div></details>`:''}
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+      ${mats?`<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;">🧵 Materiais</summary><div style="font-size:12.5px;margin-top:4px;">${mats}</div></details>`:''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
         <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span>
         ${p.status!=='pronto' ? `<button class="btn sm" onclick="prodMarcarProntas('${p.id}')">+ Marcar prontas</button>` : `<button class="btn sm" onclick="avancarStatus('${p.id}','entregue')">Marcar Entregue</button>`}
       </div></div>`; };
-  const sec = (st, tit) => { const l = lista.filter(p=>p.status===st).sort(ordem); return l.length ? `<h2 style="font-size:15px;margin:16px 0 4px;">${tit} <span class="muted" style="font-weight:400;">(${l.length})</span></h2>` + l.map(card).join('') : ''; };
-  const html = sec('aguardando','⏳ Aguardando') + sec('em_producao','🧵 Em produção') + sec('pronto','✅ Prontas para entregar');
+  const html = ordList.map(([pid, o], ix) => {
+    window._ordens[pid] = o;
+    const pz = prazoInfo(o.pedido.prazo), tot = o.pecas.reduce((s,p)=>s+(Number(p.quantidade)||0),0);
+    const prontas = o.pecas.reduce((s,p)=>s+(feito[p.id]||[]).reduce((a,l)=>a+(Number(l.quantidade)||0),0),0);
+    return `<div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div><div style="font-weight:700;">📋 Ordem de produção</div>
+          <div style="font-size:13px;font-weight:600;${pz?`color:${pz.cor};`:''}">${o.pedido.urgente?'⚡ Urgente · ':''}${o.pedido.prazo?'Entrega '+fmtDate(o.pedido.prazo)+(pz&&pz.d<=3?' · '+pz.txt.replace(/^\S+ /,''):''):'Sem data de entrega'}</div>
+          <div class="muted" style="font-size:12.5px;">${o.pecas.length} ${o.pecas.length===1?'peça':'peças'} · ${tot} unidades · ${prontas} prontas</div></div>
+        <div style="display:flex;gap:6px;flex:none;"><button class="btn sm ghost" title="Imprimir" onclick="ordemImprimir('${pid}')">🖨️</button><button class="btn sm ghost" title="Enviar" onclick="ordemEnviar('${pid}')">📲</button></div>
+      </div>
+      ${o.pecas.map(item).join('')}
+    </div>`; }).join('');
+  window._prodFeito = feito; window._prodNiv = niv;
   c.innerHTML = html || '<div class="card center muted">Nada em produção. 🎉</div>';
+}
+function ordemMateriais(o){
+  const t = {}; o.pecas.forEach(p => ((p.fichas_tecnicas||{}).ficha_materiais||[]).filter(m=>m.materiais).forEach(m => { const k = m.materiais.nome + '|' + (m.materiais.cor||'') + '|' + (m.materiais.unidade||'');
+    t[k] = (t[k]||0) + (Number(m.quantidade_por_unidade)||0)*(Number(p.quantidade)||0); }));
+  return Object.entries(t).map(([k,q]) => { const [n,c,u] = k.split('|'); return { n, c, u, q: Math.round(q*100)/100 }; }).sort((a,b)=>a.n.localeCompare(b.n));
+}
+function ordemImprimir(pid){
+  const o = (window._ordens||{})[pid]; if(!o) return;
+  const niv = window._prodNiv||{}, feito = window._prodFeito||{}, esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+  const mats = ordemMateriais(o);
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ordem de produção</title><style>
+    @page{size:A4;margin:10mm}body{font-family:Arial,sans-serif;color:#111;margin:0;font-size:11px}
+    .top{display:flex;align-items:center;gap:10px;border-bottom:2px solid #c4a574;padding-bottom:6px;margin-bottom:8px}.top img{width:46px;height:46px;border-radius:6px}
+    h1{font-family:Georgia,serif;font-size:19px;margin:0}h2{font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 3px;color:#8a6d3b}
+    table{width:100%;border-collapse:collapse;font-size:10.5px}td,th{padding:3px 5px;border-bottom:1px solid #ddd;text-align:left;vertical-align:middle}th{font-size:9px;color:#666;text-transform:uppercase}
+    .f{width:38px;height:38px;object-fit:cover;border-radius:4px}.c{text-align:center}.v{text-align:right;white-space:nowrap}.box{width:16px;height:16px;border:1px solid #333;display:inline-block}
+    .ass{display:flex;gap:40px;margin-top:26px}.ass div{flex:1;border-top:1px solid #111;padding-top:4px;text-align:center;font-size:10px}
+  </style></head><body>
+    <div class="top"><img src="${base}logo.jpg"><div style="flex:1"><h1>Ordem de produção</h1><div>${o.pedido.prazo?'<b>Entrega: '+fmtDate(o.pedido.prazo)+'</b>':'Sem data de entrega'}${o.pedido.urgente?' · <b style="color:#b00">URGENTE</b>':''}</div></div><div>${new Date().toLocaleDateString('pt-BR')}</div></div>
+    <h2>Peças</h2>
+    <table><tr><th></th><th>Peça</th><th class="c">Qtd</th><th>Nível</th><th class="c">Prontas</th><th>Feito por</th><th class="c">OK</th></tr>
+      ${o.pecas.map(p => { const f = p.fichas_tecnicas||{}, u = fichaThumbUrl(f), q = (feito[p.id]||[]).reduce((s,l)=>s+(Number(l.quantidade)||0),0);
+        return `<tr><td>${u?`<img class="f" src="${esc(u)}">`:''}</td><td><b>${esc(f.nome||'')}</b>${p.com_plastico?' · com plástico':''}</td><td class="c"><b>${p.quantidade}</b></td><td>${esc((niv[p.servico_id]||'').replace(/^.* · /,''))}</td><td class="c">${q||''}</td><td style="width:22%"></td><td class="c"><span class="box"></span></td></tr>`; }).join('')}
+    </table>
+    ${mats.length?`<h2>Materiais necessários</h2><table><tr><th>Material</th><th>Cor</th><th class="v">Quantidade</th><th class="c">Separado</th></tr>
+      ${mats.map(m => `<tr><td>${esc(m.n)}</td><td>${esc(m.c)}</td><td class="v"><b>${m.q.toLocaleString('pt-BR')} ${esc(m.u)}</b></td><td class="c"><span class="box"></span></td></tr>`).join('')}</table>`:''}
+    <div class="ass"><div>Responsável</div><div>Conferido</div></div>
+  </body></html>`;
+  let fr = document.getElementById('frame-impressao'); if(fr) fr.remove();
+  fr = document.createElement('iframe'); fr.id = 'frame-impressao'; fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(fr);
+  const d = fr.contentWindow.document; d.open(); d.write(html); d.close();
+  setTimeout(() => { fr.contentWindow.focus(); fr.contentWindow.print(); }, 700);
+}
+function ordemEnviar(pid){
+  const o = (window._ordens||{})[pid]; if(!o) return;
+  const niv = window._prodNiv||{}, mats = ordemMateriais(o);
+  const txt = `*📋 ORDEM DE PRODUÇÃO*\n${o.pedido.prazo?'*Entrega: '+fmtDate(o.pedido.prazo)+'*':'Sem data de entrega'}${o.pedido.urgente?' · ⚡ URGENTE':''}\n\n*Peças*\n` +
+    o.pecas.map(p => `• ${p.quantidade}× ${(p.fichas_tecnicas||{}).nome||''}${niv[p.servico_id]?' ('+niv[p.servico_id].replace(/^.* · /,'')+')':''}${p.com_plastico?' + plástico':''}`).join('\n') +
+    (mats.length ? `\n\n*Materiais*\n` + mats.map(m => `• ${m.n}${m.c?' '+m.c:''}: ${m.q.toLocaleString('pt-BR')} ${m.u}`).join('\n') : '');
+  if(navigator.share){ navigator.share({ text: txt }).catch(()=>{}); return; }
+  window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
 }
 async function prodMarcarProntas(pecaId){
   const p = (window._prodPecas||{})[pecaId]; if(!p) return;
