@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 11/11 06:40</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 11/11 20:05</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1278,15 +1278,29 @@ async function abrirProduto(fichaId){
     </div>
 
     ${listaMateriaisHtml('epf', f.outros_aviamentos)}
-    ${/^Bordado/.test(f.nome||'') ? '' : `<label>🪡 Bordados desta peça</label>
+    ${/^Bordado/.test(f.nome||'') ? '' : `<label>🪡 Essa peça tem bordado?</label>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <button type="button" id="epf-bd-nao" class="btn ${Object.values(window._bdSel||{}).some(q=>q>0)?'ghost':'gold'}" style="flex:1" onclick="epfBordado(false)">Não tem bordado</button>
+      <button type="button" id="epf-bd-sim" class="btn ${Object.values(window._bdSel||{}).some(q=>q>0)?'gold':'ghost'}" style="flex:1" onclick="epfBordado(true)">Tem bordado</button>
+    </div>
+    <div id="epf-bd-box" style="display:${Object.values(window._bdSel||{}).some(q=>q>0)?'block':'none'}">
     <div class="muted" style="font-size:12px;margin-top:-2px;">Quantos bordados de cada parte essa peça leva (0 = não leva).</div>
     <div class="card" style="padding:6px 12px;">${(window._bdItens||[]).map(b=>`
       <div class="item" style="gap:8px;"><span style="flex:1">${escAttr(b.nome.replace('Bordado · ',''))}</span>
-      <span class="muted" style="font-size:12px;">${b.custo_bordado!=null?money(b.custo_bordado):'sem custo'}</span><input type="number" min="0" class="epf-bord" data-b="${b.id}" value="${(window._bdSel||{})[b.id]||0}" style="width:70px;text-align:center;" oninput="atualizarCustoProduto('epf')"></div>`).join('') || '<p class="muted">Nenhum bordado cadastrado.</p>'}</div>`}
+      <span class="muted" style="font-size:12px;">${b.custo_bordado!=null?money(b.custo_bordado):'sem custo'}</span><input type="number" min="0" class="epf-bord" data-b="${b.id}" value="${(window._bdSel||{})[b.id]||0}" style="width:70px;text-align:center;" oninput="atualizarCustoProduto('epf')"></div>`).join('') || '<p class="muted">Nenhum bordado cadastrado.</p>'}</div></div>`}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoProduto('${fichaId}')">Salvar alterações</button>
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirProduto('${fichaId}')">Excluir produto</button>
     <p id="epf-msg" class="error"></p>
   `);
+}
+function epfBordado(tem){
+  const box=document.getElementById('epf-bd-box'); if(!box) return;
+  box.style.display = tem ? 'block' : 'none';
+  document.getElementById('epf-bd-sim').className = 'btn ' + (tem?'gold':'ghost');
+  document.getElementById('epf-bd-nao').className = 'btn ' + (tem?'ghost':'gold');
+  if(!tem) document.querySelectorAll('.epf-bord').forEach(i => { i.value = 0; });
+  if(tem && ![...document.querySelectorAll('.epf-bord')].some(i => Number(i.value)>0)){ const f=document.querySelector('.epf-bord'); if(f) f.focus(); }
+  if(typeof atualizarCustoProduto==='function') atualizarCustoProduto('epf');
 }
 async function excluirProduto(fichaId){
   if(!confirm('Excluir esse produto? Ele some da lista (os pedidos antigos continuam guardados).')) return;
