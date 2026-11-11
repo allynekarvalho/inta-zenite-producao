@@ -124,7 +124,7 @@ const STATUS_NEXT = {aguardando:'em_producao', em_producao:'pronto', pronto:'ent
 
 let state = {
   session: null,
-  tab: 'hoje',
+  tab: 'pedidos',
   hojeData: new Date().toISOString().slice(0,10),
   pessoaTipo: 'costureiras',
   materiaisView: 'lista',
@@ -278,15 +278,15 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 11:50</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 22:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
       <div id="content"></div>
     </div>
     <div class="navbottom">
-      ${navBtn('hoje','Hoje')}
       ${navBtn('pedidos','Pedidos')}
+      ${navBtn('producao','Produção')}
       ${navBtn('produtos','Produtos')}
       ${navBtn('materiais','Estoque')}
       ${navBtn('costureiras','Equipe')}
@@ -302,7 +302,7 @@ function switchTab(id){ state.tab = id; state.materiaisView = 'lista'; renderApp
 function loadTab(){
   const c = document.getElementById('content');
   c.innerHTML = `<div class="spinner"></div>`;
-  if(state.tab==='hoje') renderHoje();
+  if(state.tab==='hoje' || state.tab==='producao') renderProducao();
   else if(state.tab==='pedidos') renderPedidos();
   else if(state.tab==='costureiras') renderEquipe();
   else if(state.tab==='produtos') renderProdutos();
@@ -310,7 +310,48 @@ function loadTab(){
   else if(state.tab==='relatorio') renderRelatorio();
 }
 
-// ================= HOJE =================
+// ================= PRODUÇÃO (interno, sem nome de cliente) =================
+function prazoInfo(prazo){
+  if(!prazo) return null;
+  const d = Math.round((new Date(prazo+'T12:00:00') - new Date(todayISO()+'T12:00:00'))/86400000);
+  if(d < 0) return { cor:'var(--danger)', txt:`🔴 Atrasado ${-d} dia${d<-1?'s':''}`, d };
+  if(d === 0) return { cor:'var(--danger)', txt:'🔴 Entrega hoje', d };
+  if(d <= 3) return { cor:'#b7791f', txt:`🟡 Vence em ${d} dia${d>1?'s':''}`, d };
+  return { cor:'var(--muted)', txt:`Prazo ${fmtDate(prazo)}`, d };
+}
+async function renderProducao(){
+  const c = document.getElementById('content');
+  const { data: pecas, error } = await sb.from('pecas')
+    .select('*, fichas_tecnicas!pecas_ficha_id_fkey(id, nome, revenda, ficha_fotos(url,ordem), ficha_materiais(quantidade_por_unidade, materiais(nome, unidade, cor))), pedidos(numero, prazo, urgente), costureiras(nome), faccionistas(nome)')
+    .neq('status', 'entregue').order('criado_em');
+  if(error){ c.innerHTML = `<p class="error">${error.message}</p>`; return; }
+  const lista = (pecas||[]).filter(p => !(p.fichas_tecnicas && p.fichas_tecnicas.revenda));
+  const sids = [...new Set(lista.map(p=>p.servico_id).filter(Boolean))], niv = {};
+  if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => niv[x.id] = x.nome); }
+  const ordem = (a,b) => ((b.pedidos?.urgente?1:0) - (a.pedidos?.urgente?1:0)) || String(a.pedidos?.prazo||'9999').localeCompare(String(b.pedidos?.prazo||'9999'));
+  const fmtQ = (q,u) => (Math.round(q*100)/100).toLocaleString('pt-BR') + ' ' + (u||'');
+  const card = p => {
+    const f = p.fichas_tecnicas || {}, pz = prazoInfo(p.pedidos?.prazo), quem = p.costureiras?.nome || p.faccionistas?.nome || '—';
+    const mats = (f.ficha_materiais||[]).filter(m=>m.materiais).map(m => `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>${escAttr(m.materiais.nome)}${m.materiais.cor?` <span class="muted">${escAttr(m.materiais.cor)}</span>`:''}</span><b style="white-space:nowrap;">${fmtQ((Number(m.quantidade_por_unidade)||0)*(Number(p.quantidade)||0), m.materiais.unidade)}</b></div>`).join('');
+    return `<div class="card">
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        ${fichaThumbImg(f, 64)}
+        <div style="flex:1;min-width:0;">
+          <strong>${escAttr(f.nome||'Peça')}</strong> ×${p.quantidade}${p.com_plastico?' <span class="muted">+ plástico</span>':''}
+          <div class="muted" style="font-size:13px;">Pedido #${p.pedidos?.numero||''}${niv[p.servico_id]?` · ${escAttr(niv[p.servico_id])}`:''} · ${escAttr(quem)}</div>
+          ${pz?`<div style="font-size:13px;font-weight:600;color:${pz.cor};">${p.pedidos?.urgente?'⚡ Urgente · ':''}${pz.txt}</div>`:''}
+        </div>
+      </div>
+      ${mats?`<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">🧵 Materiais para produzir</summary><div style="font-size:13px;margin-top:4px;">${mats}</div></details>`:''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+        <span class="pill ${p.status}">${STATUS_LABEL[p.status]}</span>
+        ${STATUS_NEXT[p.status] ? `<button class="btn sm" onclick="avancarStatus('${p.id}','${STATUS_NEXT[p.status]}')">Marcar ${STATUS_LABEL[STATUS_NEXT[p.status]]}</button>` : ''}
+      </div></div>`; };
+  const sec = (st, tit) => { const l = lista.filter(p=>p.status===st).sort(ordem); return l.length ? `<h2 style="font-size:15px;margin:16px 0 4px;">${tit} <span class="muted" style="font-weight:400;">(${l.length})</span></h2>` + l.map(card).join('') : ''; };
+  const html = sec('aguardando','⏳ Aguardando') + sec('em_producao','🧵 Em produção') + sec('pronto','✅ Prontas para entregar');
+  c.innerHTML = html || '<div class="card center muted">Nada em produção. 🎉</div>';
+}
+// ================= HOJE (antigo) =================
 async function renderHoje(){
   const c = document.getElementById('content');
   const dia = state.hojeData;
@@ -1177,6 +1218,7 @@ async function renderPedidos(){
     const total = p.pecas?.length || 0;
     const prontos = p.pecas?.filter(x=>x.status==='pronto'||x.status==='entregue').length || 0;
     const vt = (p.pecas||[]).reduce((s,x)=>s+vendaLinha(x),0), vp = (p.pedido_pagamentos||[]).reduce((s,x)=>s+Number(x.valor||0),0), vf = vt - vp;
+    const abertoP = (p.pecas||[]).some(x=>x.status!=='entregue'), pz = abertoP ? prazoInfo(p.prazo) : null;
     const pagTxt = vt>0 ? (vf>0.009 ? `<span style="color:var(--danger);">falta ${money(vf)}</span>` : '<span style="color:var(--success,#3a9a5b);">✅ pago</span>') : '';
     return `
     <div class="card" onclick="abrirPedido('${p.id}')" style="cursor:pointer;">
@@ -1185,6 +1227,7 @@ async function renderPedidos(){
         ${p.urgente ? '<span class="pill urgente">Urgente</span>' : ''}
       </div>
       <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas${vt>0?` · ${money(vt)}`:''}</div>
+      ${pz && pz.d <= 3 ? `<div style="font-size:13px;font-weight:600;color:${pz.cor};margin-top:2px;">${pz.txt}</div>` : ''}
       ${pagTxt?`<div style="font-size:13px;margin-top:2px;">${pagTxt}</div>`:''}
     </div>`;
   }).join('');
@@ -1589,6 +1632,20 @@ function pedidoValoresRender(pedido, pecas){
   pedidoPagRender(pedido, liq);
   custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0); const el = document.getElementById('pedido-lucro'); if(el) el.innerHTML = `Custo estimado ${money(custo)} · <b>Lucro ${money(liq-custo)}</b>`; });
 }
+function linkPedido(token){ return location.origin + location.pathname.replace(/[^/]*$/, '') + 'pedido/?t=' + token; }
+async function enviarPedidoCliente(id){
+  const { data: p } = await sb.from('pedidos').select('token, numero, clientes(nome, telefone)').eq('id', id).single();
+  if(!p) return;
+  let tel = String(p.clientes?.telefone||'').replace(/\D/g,''); if(tel && tel.length <= 11) tel = '55' + tel;
+  const nome = (p.clientes?.nome||'').split(' ')[0];
+  const msg = `Olá${nome?' '+nome:''}! Aqui está o seu pedido #${p.numero} da Zênite, com as peças, o andamento e o valor:\n${linkPedido(p.token)}`;
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, '_blank');
+}
+async function copiarLinkPedido(id){
+  const { data: p } = await sb.from('pedidos').select('token').eq('id', id).single();
+  if(!p) return; const l = linkPedido(p.token);
+  try { await navigator.clipboard.writeText(l); alert('Link copiado!'); } catch(e){ prompt('Copie o link:', l); }
+}
 async function abrirPedido(id){
   const { data: pedido } = await sb.from('pedidos').select('*, clientes(*)').eq('id', id).single();
   const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
@@ -1600,6 +1657,7 @@ async function abrirPedido(id){
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
     ${clienteCardHtml(pedido.clientes, id)}
     <p class="muted">Prazo: ${pedido.prazo?fmtDate(pedido.prazo):'—'} ${pedido.urgente?'· <span style=\"color:var(--danger)\">Urgente</span>':''}</p>
+    <div class="row" style="gap:8px;"><button class="btn" style="flex:1" onclick="enviarPedidoCliente('${id}')">🔗 Enviar ao cliente</button><button class="btn ghost" onclick="copiarLinkPedido('${id}')">Copiar link</button></div>
     <h2 style="font-size:15px;margin-top:18px;">Peças</h2>
     <div id="pedido-pecas">${pedidoPecasHtml(pecas||[], id)}</div>
     <div id="pedido-valores" class="card" style="margin-top:12px;"></div>

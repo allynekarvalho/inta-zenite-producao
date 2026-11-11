@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zênite · Seu pedido</title>
+<meta property="og:title" content="Zênite · Seu pedido">
+<meta property="og:description" content="Veja as peças, o andamento e o valor do seu pedido.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+  :root{ --bg:#f6f3ec; --card:#fff; --ink:#1c2333; --muted:#6b6f7d; --gold:#a1783f; --border:#e2dccd; --ok:#2e7d4f; --danger:#9c3b3b; --royal:#1e3a6e; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:Inter,system-ui,sans-serif; font-size:15px; }
+  .wrap{ max-width:560px; margin:0 auto; padding:22px 16px 40px; }
+  .eyebrow{ color:var(--gold); font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin:0; }
+  h1{ font-family:Fraunces,Georgia,serif; font-weight:600; font-size:26px; margin:4px 0 2px; }
+  .muted{ color:var(--muted); }
+  .card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-top:12px; }
+  .item{ display:flex; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--border); }
+  .item:first-of-type{ border-top:0; }
+  .foto{ width:64px; height:64px; border-radius:10px; object-fit:cover; background:#efe9dc; flex:none; display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--muted); }
+  .pill{ display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px; border-radius:20px; margin-top:4px; }
+  .aguardando{ background:#f1ead9; color:#7a6331; } .em_producao{ background:#e3e9f6; color:var(--royal); }
+  .pronto{ background:#dcefe3; color:var(--ok); } .entregue{ background:#e6e6e6; color:#555; }
+  .linha{ display:flex; justify-content:space-between; padding:5px 0; }
+  .tot{ font-size:19px; font-weight:700; border-top:2px solid var(--ink); margin-top:6px; padding-top:10px; }
+  .btn{ display:block; width:100%; border:0; border-radius:12px; padding:14px; font-size:16px; font-weight:600; cursor:pointer; background:var(--ok); color:#fff; font-family:inherit; }
+  .kit{ font-weight:700; margin:6px 0 2px; }
+  .center{ text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="muted center" style="margin-top:60px;">Carregando seu pedido...</p></div>
+<script>
+const SUPABASE_URL = "https://ldkgwtdlajoodwsattex.supabase.co";
+const SUPABASE_KEY = "sb_publishable_HUFpcJLnKSeQ3EiXXco0iw_PXv73xgO";
+const PIX = { chave: "08928644000156", nome: "CARVALHO ROMERO", cidade: "CUIABA" };
+const ST = { aguardando:"Aguardando", em_producao:"Em produção", pronto:"Pronto ✓", entregue:"Entregue" };
+const money = v => (Number(v)||0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dBR = d => d ? d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4) : '';
+
+// Pix "copia e cola" (padrão do Banco Central)
+function crc16(s){ let c = 0xFFFF; for(let i=0;i<s.length;i++){ c ^= s.charCodeAt(i) << 8; for(let j=0;j<8;j++) c = (c & 0x8000) ? ((c << 1) ^ 0x1021) & 0xFFFF : (c << 1) & 0xFFFF; } return c.toString(16).toUpperCase().padStart(4,'0'); }
+function campo(id, v){ return id + String(v.length).padStart(2,'0') + v; }
+function pixCopiaCola(valor, txid){
+  const semAc = t => t.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+  let p = campo('00','01') + campo('26', campo('00','br.gov.bcb.pix') + campo('01', PIX.chave)) + campo('52','0000') + campo('53','986')
+    + (valor > 0 ? campo('54', valor.toFixed(2)) : '') + campo('58','BR') + campo('59', semAc(PIX.nome).slice(0,25)) + campo('60', semAc(PIX.cidade).slice(0,15))
+    + campo('62', campo('05', (txid||'***').replace(/[^A-Za-z0-9]/g,'').slice(0,25) || '***')) + '6304';
+  return p + crc16(p);
+}
+
+async function iniciar(){
+  const app = document.getElementById('app');
+  const t = new URLSearchParams(location.search).get('t');
+  if(!t){ app.innerHTML = '<p class="center muted" style="margin-top:60px;">Link inválido.</p>'; return; }
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const { data: d, error } = await sb.rpc('pedido_portal', { t });
+  if(error || !d){ app.innerHTML = '<p class="center muted" style="margin-top:60px;">Pedido não encontrado.</p>'; return; }
+  const linha = p => (Number(p.valor)||0)*(Number(p.quantidade)||0)*(1-(Number(p.desconto)||0)/100);
+  const total = d.pecas.reduce((s,p)=>s+linha(p),0), pago = d.pagamentos.reduce((s,g)=>s+(Number(g.valor)||0),0), falta = Math.max(0, total - pago);
+  const foto = p => p.foto ? `<img class="foto" src="${esc(p.foto)}" alt="">` : '<div class="foto">sem foto</div>';
+  // agrupa kits
+  const grupos = {}, avulsas = [];
+  d.pecas.forEach(p => { if(p.kit_grupo){ (grupos[p.kit_grupo] = grupos[p.kit_grupo] || []).push(p); } else avulsas.push(p); });
+  let pecasHtml = Object.values(grupos).map(g => { const k = g[0], tk = g.reduce((s,p)=>s+linha(p),0), n = Number(k.kit_qtd)||1;
+    return `<div class="kit">📦 ${esc(k.kit||'Kit')} × ${n}</div><div class="muted" style="font-size:13px;">${money(tk/n)} cada · total ${money(tk)}</div>` +
+      g.map(p => `<div class="item">${foto(p)}<div style="flex:1"><div>${esc(p.nome)}</div><span class="pill ${p.status}">${ST[p.status]||''}</span></div></div>`).join(''); }).join('');
+  pecasHtml += avulsas.map(p => `<div class="item">${foto(p)}<div style="flex:1"><div><b>${esc(p.nome)}</b> × ${p.quantidade}</div>
+      <div class="muted" style="font-size:13px;">${money(p.valor)} cada${Number(p.desconto)?` · ${String(Math.round(p.desconto*10)/10).replace('.',',')}% desc.`:''}</div>
+      <span class="pill ${p.status}">${ST[p.status]||''}</span></div><b style="white-space:nowrap">${money(linha(p))}</b></div>`).join('');
+  const codigo = falta > 0 ? pixCopiaCola(Math.round(falta*100)/100, 'PED' + d.numero) : '';
+  app.innerHTML = `
+    <p class="eyebrow">Zênite</p>
+    <h1>Pedido #${d.numero}</h1>
+    <div class="muted">${esc(d.cliente||'')}${d.prazo?` · Entrega prevista: <b>${dBR(d.prazo)}</b>`:''}</div>
+    <div class="card">${pecasHtml || '<p class="muted">Nenhuma peça ainda.</p>'}</div>
+    <div class="card">
+      <div class="linha"><span>Total do pedido</span><b>${money(total)}</b></div>
+      ${d.pagamentos.map(g => `<div class="linha muted" style="font-size:14px;"><span>Pago em ${dBR(g.data)}${g.forma?` · ${esc(g.forma)}`:''}</span><span>− ${money(g.valor)}</span></div>`).join('')}
+      <div class="linha tot"><span>${falta>0?'Falta pagar':'✅ Pedido pago'}</span><span style="color:${falta>0?'var(--danger)':'var(--ok)'}">${money(falta)}</span></div>
+    </div>
+    ${falta > 0 ? `<div class="card">
+      <b>Pagar com Pix</b>
+      <p class="muted" style="font-size:13px;margin:4px 0 10px;">Toque no botão, abra o app do seu banco e escolha <b>Pix Copia e Cola</b>. O valor de ${money(falta)} já vem preenchido.</p>
+      <button class="btn" id="btn-pix" onclick="copiarPix()">📋 Copiar código Pix</button>
+      <p class="muted" style="font-size:12px;margin:10px 0 0;">Ou use a chave CNPJ <b>08.928.644/0001-56</b> · ${esc(PIX.nome)}</p>
+    </div>` : ''}
+    <p class="muted center" style="font-size:12px;margin-top:22px;">Zênite · Paramentos Maçônicos</p>`;
+  window._pix = codigo;
+}
+async function copiarPix(){
+  const b = document.getElementById('btn-pix');
+  try { await navigator.clipboard.writeText(window._pix); }
+  catch(e){ const ta = document.createElement('textarea'); ta.value = window._pix; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  b.textContent = '✅ Código copiado! Cole no app do banco'; setTimeout(() => b.textContent = '📋 Copiar código Pix', 4000);
+}
+iniciar();
+</script>
+</body>
+</html>
