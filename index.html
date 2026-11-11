@@ -278,7 +278,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 22:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 22:40</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -628,7 +628,7 @@ async function renderKits(){
     <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button class="active">📦 Kits</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
     <button class="btn block gold" onclick="editarKit()">+ Novo kit</button>
     <div style="height:10px;"></div>
-    ${(kits||[]).map(k => { const sub = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.quantidade)||0)*(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0),0), tot = sub*(1-(Number(k.desconto_pct)||0)/100);
+    ${(kits||[]).map(k => { const sub = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.quantidade)||0)*(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0),0), tot = k.preco_fixo!=null ? Number(k.preco_fixo) : sub*(1-(Number(k.desconto_pct)||0)/100);
       return `<div class="card" onclick="editarKit('${k.id}')" style="cursor:pointer;"><div style="display:flex;justify-content:space-between;gap:8px;"><strong>📦 ${escAttr(k.nome)}</strong><strong>${money(tot)}</strong></div>
         <div class="muted" style="font-size:12px;">${(k.kit_itens||[]).map(i=>`${i.quantidade} ${escAttr(i.fichas_tecnicas&&i.fichas_tecnicas.nome||'')}`).join(' · ')}${Number(k.desconto_pct)?` · desconto ${k.desconto_pct}%`:''}</div></div>`; }).join('') || '<div class="card center muted">Nenhum kit ainda.</div>'}`;
 }
