@@ -36,6 +36,9 @@
   .btn{ display:block; width:100%; border:0; border-radius:12px; padding:14px; font-size:16px; font-weight:600; cursor:pointer; background:var(--ok); color:#fff; font-family:inherit; }
   .kit{ font-weight:700; margin:6px 0 2px; }
   .center{ text-align:center; }
+  #zoom{ position:fixed; inset:0; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; z-index:50; padding:16px; }
+  #zoom img{ max-width:100%; max-height:100%; border-radius:10px; }
+  #zoom .x{ position:absolute; top:calc(12px + env(safe-area-inset-top,0)); right:16px; color:#fff; font-size:34px; background:none; border:0; cursor:pointer; }
   .opts{ display:flex; gap:8px; margin-top:10px; }
   .opt{ flex:1; border:1.5px solid var(--border); background:var(--card); border-radius:12px; padding:12px 4px; font-size:22px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit; color:var(--ink); }
   .opt span{ font-size:14px; font-weight:600; }
@@ -43,6 +46,7 @@
 </style>
 </head>
 <body>
+<div id="zoom" onclick="this.style.display='none'"><button class="x">&times;</button><img id="zoom-img" alt=""></div>
 <div class="wrap" id="app"><p class="muted center" style="margin-top:60px;">Carregando seu pedido...</p></div>
 <script>
 const SUPABASE_URL = "https://ldkgwtdlajoodwsattex.supabase.co";
@@ -75,7 +79,7 @@ async function iniciar(){
   if(error || !d){ app.innerHTML = '<p class="center muted" style="margin-top:60px;">Pedido não encontrado.</p>'; return; }
   const linha = p => (Number(p.valor)||0)*(Number(p.quantidade)||0)*(1-(Number(p.desconto)||0)/100);
   const frete = Number(d.frete)||0, total = d.pecas.reduce((s,p)=>s+linha(p),0) + frete, pago = d.pagamentos.reduce((s,g)=>s+(Number(g.valor)||0),0), falta = Math.max(0, total - pago);
-  const foto = p => p.foto ? `<img class="foto" src="${esc(p.foto)}" alt="">` : '<div class="foto">sem foto</div>';
+  const foto = p => p.foto ? `<img class="foto" src="${esc(p.foto)}" alt="" onclick="ampliar(this.src)" style="cursor:zoom-in;">` : '<div class="foto">sem foto</div>';
   // agrupa kits
   const grupos = {}, avulsas = [];
   d.pecas.forEach(p => { if(p.kit_grupo){ (grupos[p.kit_grupo] = grupos[p.kit_grupo] || []).push(p); } else avulsas.push(p); });
@@ -130,6 +134,7 @@ async function copiarPix(){
   catch(e){ const ta = document.createElement('textarea'); ta.value = window._pix; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
   b.textContent = '✅ Código copiado! Cole no app do banco'; setTimeout(() => b.textContent = '📋 Copiar código Pix', 4000);
 }
+function ampliar(src){ document.getElementById('zoom-img').src = src; document.getElementById('zoom').style.display = 'flex'; }
 iniciar();
 </script>
 </body>
