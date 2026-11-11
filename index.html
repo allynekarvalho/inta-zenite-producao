@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:20</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:25</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1614,7 +1614,7 @@ function pecaItemHtml(p){
       ${fichaThumbImg(p.fichas_tecnicas, 44)}
       <div style="min-width:0;">
         <div><strong>${escAttr(p.fichas_tecnicas?.nome||'Peça')}</strong> <span class="muted">×${p.quantidade}</span></div>
-        <div class="muted" style="font-size:12.5px;">${[niv?niv.replace(/^.* · /,''):'', p.com_plastico?'plástico':'', STATUS_LABEL[p.status]].filter(Boolean).join(' · ')}</div>
+        <div class="muted" style="font-size:12.5px;">${[p.com_plastico?'com plástico':'', STATUS_LABEL[p.status]].filter(Boolean).join(' · ')}</div>
       </div>
     </div>
     ${p.kit_grupo ? '' : (p.valor_venda!=null ? `<strong style="white-space:nowrap;">${money(v)}</strong>` : '<span style="color:var(--danger);font-size:12px;white-space:nowrap;">sem preço</span>')}
