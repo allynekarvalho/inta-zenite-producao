@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:45</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:59</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1304,7 +1304,7 @@ async function renderPedidos(){
       <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas${vt>0?` · ${money(vt)}`:''}</div>
       ${pz && pz.d <= 3 ? `<div style="font-size:13px;font-weight:600;color:${pz.cor};margin-top:2px;">${pz.txt}</div>` : ''}
       ${p.entrega_tipo?`<div style="font-size:13px;margin-top:2px;color:var(--ok);">${p.entrega_tipo==='enviado'?`🚚 Enviado${p.transportadora?' · '+escAttr(p.transportadora):''}`:'🤝 Entregue'}${p.enviado_em?' em '+fmtDate(p.enviado_em):''}</div>`:''}
-      ${pagTxt?`<div style="font-size:13px;margin-top:2px;">${pagTxt}</div>`:''}
+      ${pagTxt?`<div style="font-size:13px;margin-top:2px;">${pagTxt}${p.pag_escolha && vf>0.009?` · quer pagar com <b>${escAttr(p.pag_escolha)}</b>`:''}</div>`:''}
     </div>`;
   }).join('');
   c.innerHTML = html;
@@ -1710,6 +1710,7 @@ async function pedidoValoresRender(pedido, pecas){
     ${(pg||[]).map(x=>L(`<span class="muted" style="font-size:13px;">Pago ${fmtDate(x.data)}${x.forma?' · '+escAttr(x.forma):''}${x.obs?' · '+escAttr(x.obs):''} <a href="#" style="color:var(--danger);" onclick="event.preventDefault();excluirPagPedido('${x.id}','${pedido.id}')">✕</a></span>`, `<span class="muted">− ${money(x.valor)}</span>`)).join('')}
     ${liq>0 ? L(falta>0.009?'<b>Falta receber</b>':'<b>✅ Pago</b>', `<b style="font-size:19px;${falta>0.009?'color:var(--danger);':'color:var(--ok);'}">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:6px;padding-top:8px;') : ''}
     ${semPreco?`<div style="font-size:12px;color:var(--danger);margin-top:4px;">${semPreco} peça(s) sem preço — toque na peça para colocar</div>`:''}
+    ${pedido.pag_escolha && falta>0.009?`<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg);font-size:14px;">${pedido.pag_escolha==='Pix'?'💠':pedido.pag_escolha==='Cartão'?'💳':'🧾'} Cliente quer pagar com <b>${escAttr(pedido.pag_escolha)}</b>${pedido.pag_escolha!=='Pix'?' — mande o '+(pedido.pag_escolha==='Cartão'?'link do cartão':'boleto')+' pelo WhatsApp':''}</div>`:''}
     <div id="pp-area"><button class="btn block" style="margin-top:10px;" onclick="registrarPagPedido('${pedido.id}', ${falta.toFixed(2)}, '${escAttr(pedido.forma_pagamento||'')}')">+ Registrar pagamento</button></div>`;
   custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0) + frete; const el = document.getElementById('pedido-lucro');
     if(el) el.innerHTML = L('Custo estimado', money(custo)) + L('<b>Lucro</b>', `<b style="color:${liq-custo>=0?'var(--ok)':'var(--danger)'};">${money(liq-custo)}</b>`) + (liq>0?`<div class="muted" style="font-size:12px;">Margem ${Math.round((liq-custo)/liq*100)}%</div>`:''); });
