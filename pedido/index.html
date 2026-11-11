@@ -6,6 +6,12 @@
 <title>Zênite · Seu pedido</title>
 <meta property="og:title" content="Zênite · Seu pedido">
 <meta property="og:description" content="Veja as peças, o andamento e o valor do seu pedido.">
+<meta property="og:image" content="https://allynekarvalho.github.io/inta-zenite-producao/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:type" content="website">
+<link rel="icon" href="../apple-touch-icon.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -75,9 +81,9 @@ async function iniciar(){
       <span class="pill ${p.status}">${ST[p.status]||''}</span></div><b style="white-space:nowrap">${money(linha(p))}</b></div>`).join('');
   const codigo = falta > 0 ? pixCopiaCola(Math.round(falta*100)/100, 'PED' + d.numero) : '';
   app.innerHTML = `
-    <p class="eyebrow">Zênite</p>
-    <h1>Pedido #${d.numero}</h1>
-    <div class="muted">${esc(d.cliente||'')}${d.prazo?` · Entrega prevista: <b>${dBR(d.prazo)}</b>`:''}</div>
+    <img src="../logo.jpg" alt="Zênite Paramentos" style="width:110px;height:110px;border-radius:16px;display:block;margin:0 auto 14px;">
+    <h1 class="center">Pedido #${d.numero}</h1>
+    <div class="muted center">${esc(d.cliente||'')}${d.prazo?` · Entrega prevista: <b>${dBR(d.prazo)}</b>`:''}</div>
     <div class="card">${pecasHtml || '<p class="muted">Nenhuma peça ainda.</p>'}</div>
     <div class="card">
       <div class="linha"><span>Total do pedido</span><b>${money(total)}</b></div>
