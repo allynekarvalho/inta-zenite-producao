@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:59</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 11/11 01:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -570,7 +570,7 @@ async function renderJoias(){
   const { data: js } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem), fornecedores(nome)').eq('ativo', true).eq('revenda', true).order('nome');
   window._joiasCache = js||[];
   c.innerHTML = `
-    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button><button class="active">💎 Joias</button></div>
+    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Conjuntos</button><button class="active">💎 Joias</button></div>
     <button class="btn block gold" onclick="editarJoia()">+ Nova joia</button>
     <input id="jo-busca" placeholder="🔍 Buscar joia..." style="margin-top:10px;" oninput="filtrarJoias()">
     <div id="jo-lista"></div>`;
@@ -628,12 +628,12 @@ async function renderKits(){
   const c = document.getElementById('content');
   const { data: kits } = await sb.from('kits').select('*, kit_itens(quantidade, fichas_tecnicas(id,nome,preco_venda))').eq('ativo', true).order('nome');
   c.innerHTML = `
-    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button class="active">📦 Kits</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
-    <button class="btn block gold" onclick="editarKit()">+ Novo kit</button>
+    <div class="segmented"><button onclick="state.produtos.aba='produtos';loadTab();">Produtos</button><button class="active">📦 Conjuntos</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
+    <button class="btn block gold" onclick="editarKit()">+ Novo conjunto</button>
     <div style="height:10px;"></div>
     ${(kits||[]).map(k => { const sub = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.quantidade)||0)*(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0),0), tot = k.preco_fixo!=null ? Number(k.preco_fixo) : sub*(1-(Number(k.desconto_pct)||0)/100);
       return `<div class="card" onclick="editarKit('${k.id}')" style="cursor:pointer;"><div style="display:flex;justify-content:space-between;gap:8px;"><strong>📦 ${escAttr(k.nome)}</strong><strong>${money(tot)}</strong></div>
-        <div class="muted" style="font-size:12px;">${(k.kit_itens||[]).map(i=>`${i.quantidade} ${escAttr(i.fichas_tecnicas&&i.fichas_tecnicas.nome||'')}`).join(' · ')}${Number(k.desconto_pct)?` · desconto ${k.desconto_pct}%`:''}</div></div>`; }).join('') || '<div class="card center muted">Nenhum kit ainda.</div>'}`;
+        <div class="muted" style="font-size:12px;">${(k.kit_itens||[]).map(i=>`${i.quantidade} ${escAttr(i.fichas_tecnicas&&i.fichas_tecnicas.nome||'')}`).join(' · ')}${Number(k.desconto_pct)?` · desconto ${k.desconto_pct}%`:''}</div></div>`; }).join('') || '<div class="card center muted">Nenhum conjunto ainda.</div>'}`;
 }
 async function editarKit(kitId){
   const [{ data: fichas }, kr] = await Promise.all([
@@ -642,17 +642,17 @@ async function editarKit(kitId){
   const k = kr.data || { nome: '', desconto_pct: 0, kit_itens: [] };
   window._kitFichas = {}; (fichas||[]).forEach(f => window._kitFichas[f.id] = f);
   window._kitItens = (k.kit_itens||[]).map(i => ({ ficha_id: i.ficha_id, quantidade: i.quantidade }));
-  showModal(`<h2>${kitId?'Editar kit':'Novo kit'} <button class="close" onclick="closeModal()">&times;</button></h2>
-    <label>Nome do kit</label><input id="kit-nome" value="${escAttr(k.nome)}" placeholder="Ex.: Kit Grau 33 · Lojas Filosóficas">
-    <label>Peças do kit</label>
+  showModal(`<h2>${kitId?'Editar conjunto':'Novo conjunto'} <button class="close" onclick="closeModal()">&times;</button></h2>
+    <label>Nome do conjunto</label><input id="kit-nome" value="${escAttr(k.nome)}" placeholder="Ex.: Conjunto Grau 33 · Lojas Filosóficas">
+    <label>Peças do conjunto</label>
     <div class="row" style="gap:6px;"><select id="kit-add" style="flex:3"><option value="">+ escolher produto ou joia...</option>${(fichas||[]).some(f=>f.revenda)?`<optgroup label="💎 Joias">${(fichas||[]).filter(f=>f.revenda).map(f=>`<option value="${f.id}">💎 ${escAttr(f.nome)}</option>`).join('')}</optgroup>`:''}<optgroup label="Produtos">${(fichas||[]).filter(f=>!f.revenda).map(f=>`<option value="${f.id}">${escAttr(f.nome)}</option>`).join('')}</optgroup></select>
       <input id="kit-add-q" type="number" min="1" value="1" style="flex:1"><button class="btn sm" onclick="kitAddItem()">Adicionar</button></div>
     <div class="muted" style="font-size:12px;margin-top:6px;">Toque no preço de cada peça para editar (muda no produto também).</div><div id="kit-itens" class="card" style="margin-top:4px;"></div>
-    <label>Preço fechado do kit (R$) — cada kit</label><input id="kit-fixo" inputmode="decimal" placeholder="Ex.: 850,00 (deixe vazio para somar as peças)" value="${k.preco_fixo!=null?String(k.preco_fixo).replace('.',','):''}" oninput="kitRender()">
-    <label>Desconto do kit (%)</label><input id="kit-desc" inputmode="decimal" value="${String(k.desconto_pct||0).replace('.',',')}" oninput="kitRender()">
+    <label>Preço fechado do conjunto (R$) — cada conjunto</label><input id="kit-fixo" inputmode="decimal" placeholder="Ex.: 850,00 (deixe vazio para somar as peças)" value="${k.preco_fixo!=null?String(k.preco_fixo).replace('.',','):''}" oninput="kitRender()">
+    <label>Desconto do conjunto (%)</label><input id="kit-desc" inputmode="decimal" value="${String(k.desconto_pct||0).replace('.',',')}" oninput="kitRender()">
     <div id="kit-total" class="card" style="margin-top:8px;"></div>
-    <button class="btn block gold" style="margin-top:12px;" onclick="salvarKit(${kitId?`'${kitId}'`:'null'})">Salvar kit</button>
-    ${kitId?`<button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirKit('${kitId}')">Excluir kit</button>`:''}
+    <button class="btn block gold" style="margin-top:12px;" onclick="salvarKit(${kitId?`'${kitId}'`:'null'})">Salvar conjunto</button>
+    ${kitId?`<button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirKit('${kitId}')">Excluir conjunto</button>`:''}
     <p id="kit-msg" class="error"></p>`);
   kitRender();
 }
@@ -673,19 +673,19 @@ async function kitRender(){
   let sub = 0; const semPreco = [];
   box.innerHTML = window._kitItens.map((i,ix) => { const f = window._kitFichas[i.ficha_id]||{}, pv = f.preco_venda!=null ? Number(f.preco_venda) : null; if(pv==null) semPreco.push(f.nome); sub += (pv||0)*i.quantidade;
     return `<div class="item" style="gap:6px;"><span style="flex:1">${f.revenda?'💎 ':''}${escAttr(f.nome||'?')}</span><input type="number" min="1" value="${i.quantidade}" style="width:56px;text-align:center;" onchange="window._kitItens[${ix}].quantidade=Number(this.value)||1;kitRender()">
-      <input inputmode="decimal" placeholder="R$ preço" title="Preço de venda do produto" value="${pv!=null?String(pv).replace('.',','):''}" style="width:96px;text-align:right;" onchange="kitSalvarPreco('${i.ficha_id}', this)"><button class="btn sm ghost" style="color:var(--danger);" onclick="window._kitItens.splice(${ix},1);kitRender()">✕</button></div>`; }).join('') || '<p class="muted">Adicione as peças do kit.</p>';
+      <input inputmode="decimal" placeholder="R$ preço" title="Preço de venda do produto" value="${pv!=null?String(pv).replace('.',','):''}" style="width:96px;text-align:right;" onchange="kitSalvarPreco('${i.ficha_id}', this)"><button class="btn sm ghost" style="color:var(--danger);" onclick="window._kitItens.splice(${ix},1);kitRender()">✕</button></div>`; }).join('') || '<p class="muted">Adicione as peças do conjunto.</p>';
   const fixo = numBR(document.getElementById('kit-fixo').value);
   const d = fixo!=null ? 0 : (numBR(document.getElementById('kit-desc').value)||0), tot = fixo!=null ? fixo : sub*(1-d/100);
   const cs = await custosFichas(window._kitItens.map(i=>i.ficha_id)); const custo = window._kitItens.reduce((s,i)=>s+(cs[i.ficha_id]||0)*i.quantidade,0);
   const L = (a,b,bold)=>`<div style="display:flex;justify-content:space-between;${bold?'font-weight:700;font-size:16px;':''}"><span>${a}</span><span>${b}</span></div>`;
-  tbox.innerHTML = L('Soma das peças', money(sub)) + (d?L(`Desconto ${d}%`, '− '+money(sub-tot)):'') + L('Preço do kit', money(tot), true) +
-    `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">${L('Custo do kit (material + bordado + corte + mão de obra)', money(custo))}${L('Lucro', money(tot-custo), true)}</div>` +
+  tbox.innerHTML = L('Soma das peças', money(sub)) + (d?L(`Desconto ${d}%`, '− '+money(sub-tot)):'') + L('Preço do conjunto', money(tot), true) +
+    `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">${L('Custo do conjunto (material + bordado + corte + mão de obra)', money(custo))}${L('Lucro', money(tot-custo), true)}</div>` +
     (fixo==null && semPreco.length?`<div class="muted" style="font-size:12px;">Sem preço de venda: ${semPreco.map(escAttr).join(', ')} (coloque no produto)</div>`:'');
 }
 async function salvarKit(kitId){
   const nome = document.getElementById('kit-nome').value.trim(), msg = document.getElementById('kit-msg');
-  if(!nome){ msg.textContent = 'Informe o nome do kit.'; return; }
-  if(!window._kitItens.length){ msg.textContent = 'Adicione as peças do kit.'; return; }
+  if(!nome){ msg.textContent = 'Informe o nome do conjunto.'; return; }
+  if(!window._kitItens.length){ msg.textContent = 'Adicione as peças do conjunto.'; return; }
   const preco_fixo = numBR(document.getElementById('kit-fixo').value);
   const desconto_pct = preco_fixo!=null ? 0 : (numBR(document.getElementById('kit-desc').value)||0);
   let id = kitId;
@@ -696,7 +696,7 @@ async function salvarKit(kitId){
   if(e2){ msg.textContent = e2.message; return; }
   closeModal(); renderKits();
 }
-async function excluirKit(id){ if(!confirm('Excluir esse kit?')) return; await sb.from('kits').update({ ativo: false }).eq('id', id); closeModal(); renderKits(); }
+async function excluirKit(id){ if(!confirm('Excluir esse conjunto?')) return; await sb.from('kits').update({ ativo: false }).eq('id', id); closeModal(); renderKits(); }
 // abre o kit em peças (uma linha por produto) para o pedido
 // divide o valor de 1 kit entre as peças (proporcional ao preço de venda; se faltar preço, divide igual)
 function distribuirValorKit(itens, V){
@@ -731,21 +731,21 @@ async function kpPreview(){
   const soma = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0)*(Number(i.quantidade)||1),0);
   const normal = k.preco_fixo!=null ? Number(k.preco_fixo) : soma*(1-(Number(k.desconto_pct)||0)/100);
   const d = numBR(document.getElementById('kp-desc').value)||0, q = Number(document.getElementById('kp-qtd').value)||1, cada = normal*(1-d/100);
-  el.innerHTML = normal>0 ? `Cada kit: ${d?`<s>${money(normal)}</s> `:''}<b>${money(cada)}</b> · Total: <b>${money(cada*q)}</b>` : 'Kit sem preço cadastrado (coloque em Produtos → Kits).';
+  el.innerHTML = normal>0 ? `Cada conjunto: ${d?`<s>${money(normal)}</s> `:''}<b>${money(cada)}</b> · Total: <b>${money(cada*q)}</b>` : 'Conjunto sem preço cadastrado (coloque em Produtos → Conjuntos).';
 }
 function kitModalHtml(acao){
-  return `<label>Kit</label><select id="kp-kit" onchange="kpPreview()">${(window._kitsCache||[]).map(k=>`<option value="${k.id}">${escAttr(k.nome)}</option>`).join('')}</select>
-    <label>Quantos kits</label><input id="kp-qtd" type="number" min="1" value="1" oninput="kpPreview()">
+  return `<label>Conjunto</label><select id="kp-kit" onchange="kpPreview()">${(window._kitsCache||[]).map(k=>`<option value="${k.id}">${escAttr(k.nome)}</option>`).join('')}</select>
+    <label>Quantos conjuntos</label><input id="kp-qtd" type="number" min="1" value="1" oninput="kpPreview()">
     <label>Desconto (%) — opcional</label><input id="kp-desc" inputmode="decimal" placeholder="Ex.: 12,9" oninput="kpPreview()">
     <div id="kp-prev" class="muted" style="font-size:13px;margin-top:4px;"></div>
-    <label>Dia de produção</label><input id="kp-dia" type="date" value="${todayISO()}">
+    <label>Data para entrega</label><input id="kp-dia" type="date" value="${todayISO()}">
     <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="kp-plastico"> Com plástico (sob encomenda)</label>
-    <button class="btn block gold" style="margin-top:14px;" onclick="${acao}">Adicionar kit</button><p id="kp-msg" class="error"></p>`;
+    <button class="btn block gold" style="margin-top:14px;" onclick="${acao}">Adicionar conjunto</button><p id="kp-msg" class="error"></p>`;
 }
 async function adicionarKitPedido(pedidoId){
   const { data } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome'); window._kitsCache = data||[];
-  if(!window._kitsCache.length){ alert('Nenhum kit cadastrado. Crie em Produtos → Kits.'); return; }
-  showModal(`<h2>Adicionar kit <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>${kitModalHtml(`salvarKitPedido('${pedidoId}')`)}`); kpPreview();
+  if(!window._kitsCache.length){ alert('Nenhum conjunto cadastrado. Crie em Produtos → Conjuntos.'); return; }
+  showModal(`<h2>Adicionar conjunto <button class="close" onclick="closeModal(); abrirPedido('${pedidoId}')">&times;</button></h2>${kitModalHtml(`salvarKitPedido('${pedidoId}')`)}`); kpPreview();
 }
 async function salvarKitPedido(pedidoId){
   const kitId = document.getElementById('kp-kit').value, q = Number(document.getElementById('kp-qtd').value)||1;
@@ -757,8 +757,8 @@ async function salvarKitPedido(pedidoId){
 async function npAbrirSeletorKit(kitId){
   if(document.getElementById('np-prazo')) npCapturarForm();
   const { data } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome'); window._kitsCache = data||[];
-  if(!window._kitsCache.length){ alert('Nenhum kit cadastrado. Crie em Produtos → Kits.'); return; }
-  showModal(`<h2>Adicionar kit <button class="close" onclick="npMostrarForm()">&times;</button></h2>${kitModalHtml('npConfirmarKit()')}`); kpPreview();
+  if(!window._kitsCache.length){ alert('Nenhum conjunto cadastrado. Crie em Produtos → Conjuntos.'); return; }
+  showModal(`<h2>Adicionar conjunto <button class="close" onclick="npMostrarForm()">&times;</button></h2>${kitModalHtml('npConfirmarKit()')}`); kpPreview();
   if(kitId && document.getElementById('kp-kit')){ document.getElementById('kp-kit').value = kitId; document.getElementById('kp-kit').dispatchEvent(new Event('change')); }
 }
 async function npConfirmarKit(){
@@ -791,7 +791,7 @@ async function renderProdutos(){
   window._prodRitos = ritos;
 
   let html = `
-    <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Kits</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
+    <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Conjuntos</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
     <input id="prod-busca-geral" placeholder="🔍 Buscar produto (ex.: avental, 33, GOB...)" oninput="buscarProdutoGeral()" autocomplete="off">
     <div id="prod-busca-res"></div>
     <h2 style="font-size:15px;">Potência</h2>
@@ -1313,10 +1313,117 @@ async function renderPedidos(){
 let npPecas = [];
 let npFormCache = null;
 
+// ===== Seletor de peças/conjuntos na mesma tela (quantidade ao lado) =====
+window._sel = { itens:{}, conj:{}, aba:'pecas', busca:'', fichas:[], kits:[] };
+async function selCarregar(){
+  const [{ data: fichas }, { data: kits }] = await Promise.all([
+    sb.from('fichas_tecnicas').select('id,nome,preco_venda,revenda, ficha_fotos(url,ordem)').eq('ativo', true).eq('tipo','produto').order('nome'),
+    sb.from('kits').select('id,nome,preco_fixo,desconto_pct, kit_itens(quantidade, fichas_tecnicas(preco_venda))').eq('ativo', true).order('nome')]);
+  window._sel = { itens:{}, conj:{}, aba:'pecas', busca:'', fichas: fichas||[], kits: kits||[] };
+}
+function selPrecoConj(k){ const soma = (k.kit_itens||[]).reduce((s,i)=>s+(Number(i.fichas_tecnicas&&i.fichas_tecnicas.preco_venda)||0)*(Number(i.quantidade)||1),0);
+  return k.preco_fixo!=null ? Number(k.preco_fixo) : soma*(1-(Number(k.desconto_pct)||0)/100); }
+function selHtml(){ return `
+  <div class="segmented" style="margin-top:14px;"><button id="sel-ab-pecas" class="active" onclick="selAba('pecas')">Peças</button><button id="sel-ab-conj" onclick="selAba('conj')">📦 Conjuntos</button></div>
+  <input id="sel-busca" placeholder="🔍 Buscar..." autocomplete="off" oninput="window._sel.busca=this.value; selRender()" style="margin-top:8px;">
+  <div id="sel-lista" style="max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;margin-top:8px;padding:0 10px;"></div>`; }
+function selAba(a){ window._sel.aba = a; document.getElementById('sel-ab-pecas').classList.toggle('active', a==='pecas'); document.getElementById('sel-ab-conj').classList.toggle('active', a==='conj'); selRender(); }
+function selRender(){
+  const S = window._sel, el = document.getElementById('sel-lista'); if(!el) return;
+  const sem = t => (t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(), ws = sem(S.busca).split(/\s+/).filter(Boolean), ok = n => ws.every(w => sem(n).includes(w));
+  const linha = (id, nome, preco, img, tipo) => { const q = (tipo==='c'?S.conj:S.itens)[id]||0; return `<div class="item" style="gap:8px;padding:8px 0;">
+      <div style="display:flex;gap:8px;align-items:center;min-width:0;flex:1;">${img}<div style="min-width:0;"><div style="font-size:14px;">${escAttr(nome)}</div><div class="muted" style="font-size:12px;">${preco>0?money(preco):'sem preço'}</div></div></div>
+      <div style="display:flex;align-items:center;gap:4px;flex:none;">
+        <button class="btn sm ghost" style="width:34px;padding:6px 0;" onclick="selQtd('${tipo}','${id}',-1)">−</button>
+        <input id="q-${tipo}-${id}" type="number" min="0" inputmode="numeric" value="${q||''}" placeholder="0" onchange="selSet('${tipo}','${id}',this.value)" style="width:52px;text-align:center;padding:6px 2px;margin:0;${q?'border-color:var(--gold);font-weight:700;':''}">
+        <button class="btn sm" style="width:34px;padding:6px 0;" onclick="selQtd('${tipo}','${id}',1)">+</button>
+      </div></div>`; };
+  el.innerHTML = (S.aba==='pecas'
+    ? S.fichas.filter(f=>ok(f.nome)).map(f => linha(f.id, (f.revenda?'💎 ':'')+f.nome, Number(f.preco_venda)||0, fichaThumbImg(f, 38), 'p'))
+    : S.kits.filter(k=>ok(k.nome)).map(k => linha(k.id, k.nome, selPrecoConj(k), '<div style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:22px;">📦</div>', 'c'))
+  ).join('') || '<p class="muted" style="padding:12px 0;">Nada encontrado.</p>';
+}
+function selSet(tipo, id, v){ const S = window._sel, m = tipo==='c' ? S.conj : S.itens; const n = Math.max(0, Math.floor(Number(v)||0)); if(n) m[id] = n; else delete m[id];
+  const inp = document.getElementById(`q-${tipo}-${id}`); if(inp){ inp.value = n||''; inp.style.borderColor = n?'var(--gold)':''; inp.style.fontWeight = n?'700':''; } selResumo(); }
+function selQtd(tipo, id, d){ const S = window._sel, m = tipo==='c' ? S.conj : S.itens; selSet(tipo, id, (m[id]||0) + d); }
+function selResumo(){
+  const S = window._sel, el = document.getElementById('sel-resumo'); if(!el) return;
+  const ps = Object.entries(S.itens), cs = Object.entries(S.conj);
+  const tot = ps.reduce((s,[id,q]) => s + (Number((S.fichas.find(f=>f.id===id)||{}).preco_venda)||0)*q, 0) + cs.reduce((s,[id,q]) => s + selPrecoConj(S.kits.find(k=>k.id===id)||{})*q, 0);
+  const n = ps.reduce((s,[,q])=>s+q,0) + cs.reduce((s,[,q])=>s+q,0);
+  el.innerHTML = n ? `<div style="font-size:13px;">${[...cs.map(([id,q])=>`${q}× ${escAttr((S.kits.find(k=>k.id===id)||{}).nome||'')}`), ...ps.map(([id,q])=>`${q}× ${escAttr((S.fichas.find(f=>f.id===id)||{}).nome||'')}`)].join(' · ')}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px;"><b>${n} ${n===1?'item':'itens'}</b><b>${money(tot)}</b></div>` : '<div class="muted" style="font-size:13px;">Nenhum item escolhido ainda.</div>';
+}
+async function selLinhas(pedidoId, prazo){
+  const S = window._sel, linhas = [];
+  for(const [id,q] of Object.entries(S.conj)) linhas.push(...(await linhasDoKit(id, q, { dia_producao: prazo||null })).map(l => ({ ...l, pedido_id: pedidoId })));
+  for(const [id,q] of Object.entries(S.itens)){ const f = S.fichas.find(x=>x.id===id)||{}; const nv = f.revenda ? null : await nivelDaPeca(id, false);
+    linhas.push({ pedido_id: pedidoId, ficha_id: id, quantidade: q, dia_producao: prazo||null, servico_id: nv ? nv.servico_id : null, valor_venda: f.preco_venda ?? null }); }
+  return linhas;
+}
 async function abrirNovoPedido(){
-  npPecas = [];
-  npFormCache = null;
-  await npMostrarForm();
+  await selCarregar();
+  const { data: clis } = await sb.from('clientes').select('nome').order('nome');
+  showModal(`<h2>Novo pedido <button class="close" onclick="closeModal()">&times;</button></h2>
+    <div id="np-area">
+    <label>Nome</label><input id="np-nome" list="np-clis" placeholder="Irmão, Loja ou Potência" autocomplete="off" onchange="npAchaTel()">
+    <datalist id="np-clis">${(clis||[]).map(c=>`<option value="${escAttr(c.nome)}">`).join('')}</datalist>
+    <div class="row" style="gap:8px;">
+      <div style="flex:1;min-width:0;"><label>Telefone</label><input id="np-tel" type="tel" placeholder="WhatsApp"></div>
+      <div style="flex:1;min-width:0;"><label>Data para entrega</label><input id="np-prazo" type="date"></div>
+    </div>
+    ${selHtml()}
+    <div style="position:sticky;bottom:-28px;background:var(--bg);padding:10px 0 4px;margin-top:8px;border-top:1px solid var(--border);">
+      <div id="sel-resumo"></div>
+      <button class="btn block gold" style="margin-top:8px;" onclick="npFechar()">Fechar pedido</button><p id="np-msg" class="error"></p>
+    </div></div>`);
+  selRender(); selResumo();
+}
+async function npAchaTel(){
+  const nome = document.getElementById('np-nome').value.trim(); if(!nome) return;
+  const { data } = await sb.from('clientes').select('telefone').ilike('nome', nome).limit(1);
+  const t = document.getElementById('np-tel'); if(data && data[0] && data[0].telefone && t && !t.value) t.value = data[0].telefone;
+}
+async function npFechar(){
+  const msg = document.getElementById('np-msg'), nome = document.getElementById('np-nome').value.trim(), telefone = document.getElementById('np-tel').value.trim() || null, prazo = document.getElementById('np-prazo').value || null;
+  if(!nome){ msg.textContent = 'Coloque o nome do cliente.'; return; }
+  if(!Object.keys(window._sel.itens).length && !Object.keys(window._sel.conj).length){ msg.textContent = 'Escolha pelo menos uma peça ou conjunto.'; return; }
+  msg.textContent = ''; const btn = event && event.target; if(btn){ btn.disabled = true; btn.textContent = 'Salvando...'; }
+  let clienteId;
+  const { data: ex } = await sb.from('clientes').select('id,telefone').ilike('nome', nome).limit(1);
+  if(ex && ex.length){ clienteId = ex[0].id; if(telefone && telefone !== ex[0].telefone) await sb.from('clientes').update({ telefone }).eq('id', clienteId); }
+  else { const { data, error } = await sb.from('clientes').insert({ nome, telefone, tipo: 'irmao' }).select().single(); if(error){ msg.textContent = error.message; if(btn){ btn.disabled=false; btn.textContent='Fechar pedido'; } return; } clienteId = data.id; }
+  const { data: ped, error } = await sb.from('pedidos').insert({ cliente_id: clienteId, prazo }).select().single();
+  if(error){ msg.textContent = error.message; if(btn){ btn.disabled=false; btn.textContent='Fechar pedido'; } return; }
+  const linhas = await selLinhas(ped.id, prazo);
+  const { error: e2 } = await sb.from('pecas').insert(linhas);
+  if(e2){ msg.textContent = 'Pedido criado, mas houve erro nas peças: ' + e2.message; return; }
+  const tot = linhas.reduce((s,l)=>s+vendaLinha(l),0);
+  document.getElementById('np-area').innerHTML = `<div class="card center" style="margin-top:10px;">
+      <div style="font-size:40px;">✅</div><h2 style="justify-content:center;margin:4px 0;">Pedido #${ped.numero} fechado</h2>
+      <div class="muted">${escAttr(nome)}${prazo?' · entrega '+fmtDate(prazo):''}</div><div style="font-size:20px;font-weight:700;margin-top:6px;">${money(tot)}</div></div>
+    <button class="btn block" style="margin-top:12px;" onclick="enviarPedidoCliente('${ped.id}')">🔗 Enviar link ao cliente</button>
+    <button class="btn block ghost" style="margin-top:8px;" onclick="copiarLinkPedido('${ped.id}')">📋 Copiar link</button>
+    <button class="btn block ghost" style="margin-top:8px;" onclick="abrirPedido('${ped.id}')">Ver pedido</button>
+    <button class="btn block ghost" style="margin-top:8px;" onclick="abrirNovoPedido()">+ Outro pedido</button>`;
+  if(state.tab === 'pedidos') renderPedidos();
+}
+// adicionar peças/conjuntos num pedido existente (mesmo seletor)
+async function adicionarItensPedido(pedidoId){
+  await selCarregar();
+  const { data: ped } = await sb.from('pedidos').select('numero,prazo').eq('id', pedidoId).single();
+  showModal(`<h2>Adicionar ao pedido #${ped?.numero||''} <button class="close" onclick="abrirPedido('${pedidoId}')">&times;</button></h2>
+    ${selHtml()}
+    <div style="position:sticky;bottom:-28px;background:var(--bg);padding:10px 0 4px;margin-top:8px;border-top:1px solid var(--border);">
+      <div id="sel-resumo"></div>
+      <button class="btn block gold" style="margin-top:8px;" onclick="adicionarItensSalvar('${pedidoId}','${ped?.prazo||''}')">Adicionar ao pedido</button><p id="ai-msg" class="error"></p></div>`);
+  selRender(); selResumo();
+}
+async function adicionarItensSalvar(pedidoId, prazo){
+  if(!Object.keys(window._sel.itens).length && !Object.keys(window._sel.conj).length){ document.getElementById('ai-msg').textContent = 'Escolha pelo menos um item.'; return; }
+  const { error } = await sb.from('pecas').insert(await selLinhas(pedidoId, prazo||null));
+  if(error){ document.getElementById('ai-msg').textContent = error.message; return; }
+  abrirPedido(pedidoId);
 }
 
 async function npMostrarForm(){
@@ -1351,7 +1458,7 @@ async function npMostrarForm(){
 
     <h2 style="font-size:15px;margin-top:20px;">Peças do pedido</h2>
     <div id="np-pecas-lista"></div>
-    <div class="row" style="gap:8px;margin-top:8px;"><button class="btn ghost" style="flex:1" onclick="npAbrirSeletorPeca()">+ Adicionar peça</button><button class="btn ghost" style="flex:1" onclick="npAbrirSeletorKit()">📦 Adicionar kit</button></div>
+    <div class="row" style="gap:8px;margin-top:8px;"><button class="btn ghost" style="flex:1" onclick="npAbrirSeletorPeca()">+ Adicionar peça</button><button class="btn ghost" style="flex:1" onclick="npAbrirSeletorKit()">📦 Adicionar conjunto</button></div>
 
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarNovoPedido()">Criar pedido</button>
     <p id="np-msg" class="error"></p>
@@ -1434,7 +1541,7 @@ async function npAbrirSeletorPeca(){
   const { data: kitsNp } = await sb.from('kits').select('id,nome').eq('ativo', true).order('nome');
   showModal(`
     <h2>Adicionar peça <button class="close" onclick="npMostrarForm()">&times;</button></h2>
-    ${(kitsNp||[]).length ? `<label>📦 Kits</label><div class="chips">${kitsNp.map(k=>`<button class="chip" onclick="npAbrirSeletorKit('${k.id}')">📦 ${escAttr(k.nome)}</button>`).join('')}</div><label style="margin-top:12px;">Ou uma peça avulsa</label>` : ''}
+    ${(kitsNp||[]).length ? `<label>📦 Conjuntos</label><div class="chips">${kitsNp.map(k=>`<button class="chip" onclick="npAbrirSeletorKit('${k.id}')">📦 ${escAttr(k.nome)}</button>`).join('')}</div><label style="margin-top:12px;">Ou uma peça avulsa</label>` : ''}
     <label>Buscar tipo de peça</label>
     <input id="np2-busca" placeholder="Digite pra filtrar..." oninput="filtrarFichaPicker('np2-busca','np2-ficha-lista')">
     <input type="hidden" id="np2-ficha">
@@ -1445,7 +1552,7 @@ async function npAbrirSeletorPeca(){
     <p class="muted">Não achou o tipo? <a href="#" onclick="event.preventDefault(); npNovaFicha()">Cadastrar novo tipo de peça</a></p>
     <label>Quantidade</label>
     <input type="number" id="np2-qtd" value="1" min="1">
-    <label>Dia de produção</label>
+    <label>Data para entrega</label>
     <input type="date" id="np2-dia" value="${todayISO()}">
     <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="np2-plastico"> Com plástico (sob encomenda)</label>
     ${responsavelSelectHtml('np2', costureiras, faccionistas)}
@@ -1629,17 +1736,17 @@ function pedidoPecasHtml(pecas, pedidoId){
   const nomeKit = window._kitNome || {};
   return Object.values(grupos).map(g => { const k = g[0], tot = g.reduce((s,p)=>s+vendaLinha(p),0);
     return `<details class="card" style="margin:8px 0;padding:10px 12px;"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px;">
-      <strong>📦 ${escAttr(nomeKit[k.kit_id]||'Kit')} × ${k.kit_qtd||1}</strong><strong>${money(tot)}</strong></summary>
+      <strong>📦 ${escAttr(nomeKit[k.kit_id]||'Conjunto')} × ${k.kit_qtd||1}</strong><strong>${money(tot)}</strong></summary>
       <div class="muted" style="font-size:12px;margin:2px 0;">${money(tot/(k.kit_qtd||1))} cada${Number(k.desconto_pct)?` · desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}%`:''} · ver peças ›</div>
       ${g.map(pecaItemHtml).join('')}
-      <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do kit</button><button class="btn sm" onclick="descontoKitPedido('${k.kit_grupo}','${pedidoId}')">% Desconto</button>
-      <button class="btn sm ghost" style="color:var(--danger);" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">Tirar este kit do pedido</button></div></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
+      <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do conjunto</button><button class="btn sm" onclick="descontoKitPedido('${k.kit_grupo}','${pedidoId}')">% Desconto</button>
+      <button class="btn sm ghost" style="color:var(--danger);" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">Tirar este conjunto do pedido</button></div></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
 }
 async function descontoKitPedido(grupo, pedidoId){
   const { data: ps } = await sb.from('pecas').select('id,desconto_pct').eq('kit_grupo', grupo);
   if(!ps || !ps.length) return;
   const at = Number(ps[0].desconto_pct)||0;
-  const r = prompt('Desconto (%) para este kit:', at ? String(Math.round(at*10)/10).replace('.',',') : '');
+  const r = prompt('Desconto (%) para este conjunto:', at ? String(Math.round(at*10)/10).replace('.',',') : '');
   if(r==null) return; const d = numBR(r.replace('%','')) || 0;
   const { error } = await sb.from('pecas').update({ desconto_pct: d }).eq('kit_grupo', grupo);
   if(error){ alert(error.message); return; }
@@ -1649,7 +1756,7 @@ async function valorKitPedido(grupo, pedidoId){
   const { data: ps } = await sb.from('pecas').select('id,quantidade,kit_qtd,valor_venda,desconto_pct,ficha_id, fichas_tecnicas!pecas_ficha_id_fkey(preco_venda)').eq('kit_grupo', grupo).order('criado_em');
   if(!ps || !ps.length) return;
   const nk = Number(ps[0].kit_qtd)||1, atual = ps.reduce((s,p)=>s+vendaLinha(p),0)/nk;
-  const r = prompt('Valor de CADA kit (R$):', atual ? String(Math.round(atual*100)/100).replace('.',',') : '');
+  const r = prompt('Valor de CADA conjunto (R$):', atual ? String(Math.round(atual*100)/100).replace('.',',') : '');
   if(r==null) return; const V = numBR(r); if(V==null || isNaN(V)){ alert('Valor inválido'); return; }
   const itens = ps.map(p => ({ q: (Number(p.quantidade)||1)/nk, pv: p.fichas_tecnicas && p.fichas_tecnicas.preco_venda }));
   const us = distribuirValorKit(itens, V);
@@ -1657,7 +1764,7 @@ async function valorKitPedido(grupo, pedidoId){
   closeModal(); abrirPedido(pedidoId);
 }
 async function removerKitPedido(grupo, pedidoId){
-  if(!confirm('Tirar este kit (e todas as peças dele) do pedido?')) return;
+  if(!confirm('Tirar este conjunto (e todas as peças dele) do pedido?')) return;
   const { error } = await sb.from('pecas').delete().eq('kit_grupo', grupo);
   if(error){ alert(error.message); return; }
   closeModal(); abrirPedido(pedidoId);
@@ -1789,7 +1896,7 @@ async function abrirPedido(id){
     <div class="row" style="gap:8px;margin-top:12px;"><button class="btn" style="flex:1" onclick="enviarPedidoCliente('${id}')">🔗 Enviar ao cliente</button><button class="btn ghost" title="Copiar link" style="flex:0 0 auto;width:auto;padding:0 16px;" onclick="copiarLinkPedido('${id}')">📋 Link</button></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;">
       <h2 style="font-size:15px;margin:0;">Peças</h2>
-      <div style="display:flex;gap:6px;"><button class="btn sm" onclick="adicionarPeca('${id}')">+ Peça</button><button class="btn sm" onclick="adicionarKitPedido('${id}')">+ Kit</button></div>
+      <button class="btn sm" onclick="adicionarItensPedido('${id}')">+ Adicionar</button>
     </div>
     <div id="pedido-pecas" style="margin-top:4px;">${pedidoPecasHtml(pecas||[], id)}</div>
     <div id="pedido-valores" class="card" style="margin-top:14px;"></div>
@@ -1853,7 +1960,7 @@ async function adicionarPeca(pedidoId){
     <p class="muted">Não achou o tipo? <a href="#" onclick="event.preventDefault(); novaFicha('${pedidoId}')">Cadastrar novo tipo de peça</a></p>
     <label>Quantidade</label>
     <input type="number" id="pc-qtd" value="1" min="1">
-    <label>Dia de produção</label>
+    <label>Data para entrega</label>
     <input type="date" id="pc-dia" value="${todayISO()}">
     <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="pc-plastico"> Com plástico (sob encomenda)</label>
     ${responsavelSelectHtml('pc', costureiras, faccionistas)}
@@ -1930,19 +2037,22 @@ async function salvarFicha(pedidoId){
 
 async function editarPeca(id){
   const { data: p } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome)').eq('id', id).single();
+  window._epPedido = p && p.pedido_id;
   const { data: costureiras } = await sb.from('costureiras').select('*').eq('ativo', true).order('nome');
   const { data: faccionistas } = await sb.from('faccionistas').select('*').eq('ativo', true).order('nome');
   showModal(`
     <h2>${p.fichas_tecnicas?.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     <label>Quantidade</label>
     <input type="number" id="ep-qtd" value="${p.quantidade}" min="1">
-    <label>Dia de produção</label>
+    <label>Valor de venda (cada) R$</label>
+    <input id="ep-valor" inputmode="decimal" value="${p.valor_venda!=null?String(p.valor_venda).replace('.',','):''}" placeholder="0,00">
+    <label>Data para entrega</label>
     <input type="date" id="ep-dia" value="${p.dia_producao||''}">
     <label>Status</label>
     <select id="ep-status">
       ${Object.keys(STATUS_LABEL).map(s=>`<option value="${s}" ${s===p.status?'selected':''}>${STATUS_LABEL[s]}</option>`).join('')}
     </select>
-    ${responsavelSelectHtml('ep', costureiras, faccionistas, p.costureira_id, p.faccionista_id)}
+    <div style="display:none;">${responsavelSelectHtml('ep', costureiras, faccionistas, p.costureira_id, p.faccionista_id)}</div>
     <div class="row" style="margin-top:16px;">
       <button class="btn ghost" onclick="excluirPeca('${id}')">Excluir</button>
       <button class="btn gold" onclick="salvarEdicaoPeca('${id}')">Salvar</button>
@@ -1955,11 +2065,13 @@ async function salvarEdicaoPeca(id){
     quantidade: Number(document.getElementById('ep-qtd').value) || 1,
     dia_producao: document.getElementById('ep-dia').value || null,
     status: document.getElementById('ep-status').value,
+    valor_venda: numBR(document.getElementById('ep-valor').value),
     ...lerResponsavel('ep'),
   };
   const { error } = await sb.from('pecas').update(patch).eq('id', id);
   if(error){ document.getElementById('ep-msg').textContent = error.message; return; }
   closeModal();
+  if(window._epPedido){ abrirPedido(window._epPedido); return; }
   loadTab();
 }
 async function excluirPeca(id){

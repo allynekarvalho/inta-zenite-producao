@@ -80,7 +80,7 @@ async function iniciar(){
   const grupos = {}, avulsas = [];
   d.pecas.forEach(p => { if(p.kit_grupo){ (grupos[p.kit_grupo] = grupos[p.kit_grupo] || []).push(p); } else avulsas.push(p); });
   let pecasHtml = Object.values(grupos).map(g => { const k = g[0], tk = g.reduce((s,p)=>s+linha(p),0), n = Number(k.kit_qtd)||1;
-    return `<div class="kit">📦 ${esc(k.kit||'Kit')} × ${n}</div><div class="muted" style="font-size:13px;">${money(tk/n)} cada · total ${money(tk)}</div>` +
+    return `<div class="kit">📦 ${esc(k.kit||'Conjunto')} × ${n}</div><div class="muted" style="font-size:13px;">${money(tk/n)} cada · total ${money(tk)}</div>` +
       g.map(p => `<div class="item">${foto(p)}<div style="flex:1"><div>${esc(p.nome)}</div><span class="pill ${p.status}">${ST[p.status]||''}</span></div></div>`).join(''); }).join('');
   pecasHtml += avulsas.map(p => `<div class="item">${foto(p)}<div style="flex:1"><div><b>${esc(p.nome)}</b> × ${p.quantidade}</div>
       <div class="muted" style="font-size:13px;">${money(p.valor)} cada${Number(p.desconto)?` · ${String(Math.round(p.desconto*10)/10).replace('.',',')}% desc.`:''}</div>
