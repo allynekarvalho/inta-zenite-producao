@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:25</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 10/11 23:45</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1292,7 +1292,7 @@ async function renderPedidos(){
   html += pedidos.map(p => {
     const total = p.pecas?.length || 0;
     const prontos = p.pecas?.filter(x=>x.status==='pronto'||x.status==='entregue').length || 0;
-    const vt = (p.pecas||[]).reduce((s,x)=>s+vendaLinha(x),0), vp = (p.pedido_pagamentos||[]).reduce((s,x)=>s+Number(x.valor||0),0), vf = vt - vp;
+    const vt = (p.pecas||[]).reduce((s,x)=>s+vendaLinha(x),0) + (Number(p.frete)||0), vp = (p.pedido_pagamentos||[]).reduce((s,x)=>s+Number(x.valor||0),0), vf = vt - vp;
     const abertoP = (p.pecas||[]).some(x=>x.status!=='entregue'), pz = abertoP ? prazoInfo(p.prazo) : null;
     const pagTxt = vt>0 ? (vf>0.009 ? `<span style="color:var(--danger);">falta ${money(vf)}</span>` : '<span style="color:var(--success,#3a9a5b);">✅ pago</span>') : '';
     return `
@@ -1303,6 +1303,7 @@ async function renderPedidos(){
       </div>
       <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas${vt>0?` · ${money(vt)}`:''}</div>
       ${pz && pz.d <= 3 ? `<div style="font-size:13px;font-weight:600;color:${pz.cor};margin-top:2px;">${pz.txt}</div>` : ''}
+      ${p.entrega_tipo?`<div style="font-size:13px;margin-top:2px;color:var(--ok);">${p.entrega_tipo==='enviado'?`🚚 Enviado${p.transportadora?' · '+escAttr(p.transportadora):''}`:'🤝 Entregue'}${p.enviado_em?' em '+fmtDate(p.enviado_em):''}</div>`:''}
       ${pagTxt?`<div style="font-size:13px;margin-top:2px;">${pagTxt}</div>`:''}
     </div>`;
   }).join('');
@@ -1697,20 +1698,63 @@ async function excluirPagPedido(id, pedidoId){
 }
 async function pedidoValoresRender(pedido, pecas){
   const div = document.getElementById('pedido-valores'); if(!div) return;
-  const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), liq = pecas.reduce((s,p)=>s+vendaLinha(p),0);
+  const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), frete = Number(pedido.frete)||0, liq = pecas.reduce((s,p)=>s+vendaLinha(p),0) + frete;
   const semPreco = pecas.filter(p=>p.valor_venda==null).length;
   const { data: pg } = await sb.from('pedido_pagamentos').select('*').eq('pedido_id', pedido.id).order('data');
   const pago = (pg||[]).reduce((s,x)=>s+Number(x.valor||0),0), falta = Math.max(0, liq - pago);
   const L = (a,b,st)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;${st||''}"><span>${a}</span><span>${b}</span></div>`;
   div.innerHTML = `
-    ${bruto-liq>0.009 ? L('<span class="muted">Desconto</span>', `<span class="muted">− ${money(bruto-liq)}</span>`) : ''}
+    ${bruto+frete-liq>0.009 ? L('<span class="muted">Desconto</span>', `<span class="muted">− ${money(bruto+frete-liq)}</span>`) : ''}
+    ${frete ? L('<span class="muted">Frete</span>', `<span class="muted">${money(frete)}</span>`) : ''}
     ${L('Total do pedido', `<b>${money(liq)}</b>`)}
     ${(pg||[]).map(x=>L(`<span class="muted" style="font-size:13px;">Pago ${fmtDate(x.data)}${x.forma?' · '+escAttr(x.forma):''}${x.obs?' · '+escAttr(x.obs):''} <a href="#" style="color:var(--danger);" onclick="event.preventDefault();excluirPagPedido('${x.id}','${pedido.id}')">✕</a></span>`, `<span class="muted">− ${money(x.valor)}</span>`)).join('')}
     ${liq>0 ? L(falta>0.009?'<b>Falta receber</b>':'<b>✅ Pago</b>', `<b style="font-size:19px;${falta>0.009?'color:var(--danger);':'color:var(--ok);'}">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:6px;padding-top:8px;') : ''}
     ${semPreco?`<div style="font-size:12px;color:var(--danger);margin-top:4px;">${semPreco} peça(s) sem preço — toque na peça para colocar</div>`:''}
     <div id="pp-area"><button class="btn block" style="margin-top:10px;" onclick="registrarPagPedido('${pedido.id}', ${falta.toFixed(2)}, '${escAttr(pedido.forma_pagamento||'')}')">+ Registrar pagamento</button></div>`;
-  custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0); const el = document.getElementById('pedido-lucro');
+  custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0) + frete; const el = document.getElementById('pedido-lucro');
     if(el) el.innerHTML = L('Custo estimado', money(custo)) + L('<b>Lucro</b>', `<b style="color:${liq-custo>=0?'var(--ok)':'var(--danger)'};">${money(liq-custo)}</b>`) + (liq>0?`<div class="muted" style="font-size:12px;">Margem ${Math.round((liq-custo)/liq*100)}%</div>`:''); });
+}
+const TRANSPORTADORAS = ['Correios PAC','Correios SEDEX','Jadlog','Transportadora','Ônibus','Motoboy','Outro'];
+function rastreioLink(p){
+  if(!p.rastreio) return '';
+  const r = encodeURIComponent(p.rastreio.trim());
+  return /correios/i.test(p.transportadora||'') ? `https://rastreamento.correios.com.br/app/index.php?objeto=${r}` : (/jadlog/i.test(p.transportadora||'') ? `https://www.jadlog.com.br/jadlog/tracking?cte=${r}` : '');
+}
+function entregaHtml(p){
+  if(!p.entrega_tipo) return `<strong>🚚 Entrega</strong>
+    <div class="row" style="gap:8px;margin-top:8px;"><button class="btn" style="flex:1" onclick="entregaForm('${p.id}','enviado')">🚚 Enviar</button><button class="btn ghost" style="flex:1" onclick="entregaForm('${p.id}','retirada')">🤝 Entregue em mãos</button></div>`;
+  const rl = rastreioLink(p);
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><strong style="color:var(--ok);">${p.entrega_tipo==='enviado'?'🚚 Enviado':'🤝 Entregue em mãos'}${p.enviado_em?' · '+fmtDate(p.enviado_em):''}</strong>
+    <button class="btn sm ghost" onclick="entregaForm('${p.id}','${p.entrega_tipo}')">Editar</button></div>
+    ${p.transportadora?`<div class="muted" style="font-size:13px;">${escAttr(p.transportadora)}</div>`:''}
+    ${p.rastreio?`<div style="font-size:13px;">Rastreio: <b>${escAttr(p.rastreio)}</b>${rl?` · <a href="${rl}" target="_blank">acompanhar</a>`:''}</div>`:''}`;
+}
+async function entregaForm(id, tipo){
+  const { data: p } = await sb.from('pedidos').select('*').eq('id', id).single();
+  const div = document.getElementById('pedido-entrega'); if(!div || !p) return;
+  const env = tipo === 'enviado';
+  div.innerHTML = `<strong>${env?'🚚 Enviar pedido':'🤝 Entregue em mãos'}</strong>
+    ${env?`<label>Como vai</label><select id="en-transp">${TRANSPORTADORAS.map(t=>`<option ${t===p.transportadora?'selected':''}>${t}</option>`).join('')}</select>
+    <label>Código de rastreio</label><input id="en-rastreio" value="${escAttr(p.rastreio||'')}" placeholder="Ex.: AB123456789BR">
+    <label>Frete cobrado do cliente (R$)</label><input id="en-frete" inputmode="decimal" value="${p.frete!=null?String(p.frete).replace('.',','):''}" placeholder="0,00 (soma no total)">`:''}
+    <label>Data</label><input id="en-data" type="date" value="${p.enviado_em||todayISO()}">
+    <label style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="checkbox" id="en-pecas" checked style="width:auto;"> Marcar todas as peças como entregues</label>
+    <div class="row" style="gap:8px;margin-top:10px;"><button class="btn gold" style="flex:1" onclick="entregaSalvar('${id}','${tipo}')">Salvar</button>
+    ${p.entrega_tipo?`<button class="btn ghost" style="color:var(--danger);" onclick="entregaDesfazer('${id}')">Desfazer</button>`:`<button class="btn ghost" onclick="abrirPedido('${id}')">Cancelar</button>`}</div>`;
+}
+async function entregaSalvar(id, tipo){
+  const env = tipo === 'enviado', g = x => document.getElementById(x);
+  const patch = { entrega_tipo: tipo, enviado_em: g('en-data').value || todayISO(),
+    transportadora: env ? g('en-transp').value : null, rastreio: env ? (g('en-rastreio').value.trim() || null) : null, frete: env ? numBR(g('en-frete').value) : null };
+  const { error } = await sb.from('pedidos').update(patch).eq('id', id);
+  if(error){ alert(error.message); return; }
+  if(g('en-pecas').checked) await sb.from('pecas').update({ status: 'entregue' }).eq('pedido_id', id);
+  abrirPedido(id);
+}
+async function entregaDesfazer(id){
+  if(!confirm('Desfazer a entrega/envio deste pedido?')) return;
+  await sb.from('pedidos').update({ entrega_tipo: null, enviado_em: null, transportadora: null, rastreio: null, frete: null }).eq('id', id);
+  abrirPedido(id);
 }
 function linkPedido(token){ return location.origin + location.pathname.replace(/[^/]*$/, '') + 'pedido/?t=' + token; }
 async function enviarPedidoCliente(id){
@@ -1748,6 +1792,7 @@ async function abrirPedido(id){
     </div>
     <div id="pedido-pecas" style="margin-top:4px;">${pedidoPecasHtml(pecas||[], id)}</div>
     <div id="pedido-valores" class="card" style="margin-top:14px;"></div>
+    <div id="pedido-entrega" class="card" style="margin-top:10px;">${entregaHtml(pedido)}</div>
     <details class="card" style="margin-top:10px;padding:10px 14px;"><summary style="cursor:pointer;font-weight:600;list-style:none;">📊 Custos e lucro <span class="muted" style="font-weight:400;font-size:12px;">· só você vê ›</span></summary>
       <div id="pedido-lucro" style="font-size:14px;margin-top:8px;">Calculando...</div>
       <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13.5px;">🪡 Bordados</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>

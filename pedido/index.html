@@ -60,6 +60,8 @@ function pixCopiaCola(valor, txid){
   return p + crc16(p);
 }
 
+function rastreio(d){ if(!d.rastreio) return ''; const r = encodeURIComponent(d.rastreio.trim());
+  return /correios/i.test(d.transportadora||'') ? `https://rastreamento.correios.com.br/app/index.php?objeto=${r}` : (/jadlog/i.test(d.transportadora||'') ? `https://www.jadlog.com.br/jadlog/tracking?cte=${r}` : ''); }
 async function iniciar(){
   const app = document.getElementById('app');
   const t = new URLSearchParams(location.search).get('t');
@@ -68,7 +70,7 @@ async function iniciar(){
   const { data: d, error } = await sb.rpc('pedido_portal', { t });
   if(error || !d){ app.innerHTML = '<p class="center muted" style="margin-top:60px;">Pedido não encontrado.</p>'; return; }
   const linha = p => (Number(p.valor)||0)*(Number(p.quantidade)||0)*(1-(Number(p.desconto)||0)/100);
-  const total = d.pecas.reduce((s,p)=>s+linha(p),0), pago = d.pagamentos.reduce((s,g)=>s+(Number(g.valor)||0),0), falta = Math.max(0, total - pago);
+  const frete = Number(d.frete)||0, total = d.pecas.reduce((s,p)=>s+linha(p),0) + frete, pago = d.pagamentos.reduce((s,g)=>s+(Number(g.valor)||0),0), falta = Math.max(0, total - pago);
   const foto = p => p.foto ? `<img class="foto" src="${esc(p.foto)}" alt="">` : '<div class="foto">sem foto</div>';
   // agrupa kits
   const grupos = {}, avulsas = [];
@@ -84,8 +86,12 @@ async function iniciar(){
     <img src="../logo.jpg" alt="Zênite Paramentos" style="width:110px;height:110px;border-radius:16px;display:block;margin:0 auto 14px;">
     <h1 class="center">Pedido #${d.numero}</h1>
     <div class="muted center">${esc(d.cliente||'')}${d.prazo?` · Entrega prevista: <b>${dBR(d.prazo)}</b>`:''}</div>
+    ${d.entrega_tipo ? `<div class="card" style="border-color:var(--ok);"><b style="color:var(--ok);">${d.entrega_tipo==='enviado'?'🚚 Pedido enviado':'🤝 Pedido entregue'}${d.enviado_em?' em '+dBR(d.enviado_em):''}</b>
+      ${d.transportadora?`<div class="muted" style="font-size:14px;">${esc(d.transportadora)}</div>`:''}
+      ${d.rastreio?`<div style="font-size:14px;margin-top:4px;">Código de rastreio: <b>${esc(d.rastreio)}</b></div>${rastreio(d)?`<a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:10px;background:var(--royal);" href="${rastreio(d)}" target="_blank">📦 Acompanhar entrega</a>`:''}`:''}</div>` : ''}
     <div class="card">${pecasHtml || '<p class="muted">Nenhuma peça ainda.</p>'}</div>
     <div class="card">
+      ${frete?`<div class="linha muted" style="font-size:14px;"><span>Frete</span><span>${money(frete)}</span></div>`:''}
       <div class="linha"><span>Total do pedido</span><b>${money(total)}</b></div>
       ${d.pagamentos.map(g => `<div class="linha muted" style="font-size:14px;"><span>Pago em ${dBR(g.data)}${g.forma?` · ${esc(g.forma)}`:''}</span><span>− ${money(g.valor)}</span></div>`).join('')}
       <div class="linha tot"><span>${falta>0?'Falta pagar':'✅ Pedido pago'}</span><span style="color:${falta>0?'var(--danger)':'var(--ok)'}">${money(falta)}</span></div>
