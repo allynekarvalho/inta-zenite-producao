@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 16:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 16:10</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -3092,8 +3092,8 @@ async function receitaRender(compId){
   let custo = 0;
   box.classList.remove('muted');
   box.innerHTML = (rec||[]).map(r => { const x = mm[r.material_id]||{}; const cu = custoUnit(x); if(cu!=null) custo += cu*Number(r.quantidade);
-    return `<div class="item" style="gap:8px;"><span style="flex:1">${escAttr(x.nome||'?')}</span>
-      <input inputmode="decimal" style="width:80px;text-align:right;" value="${String(r.quantidade).replace('.',',')}" onchange="receitaQtd('${r.id}',this.value,'${compId}')"><span class="muted" style="font-size:12px;">${x.unidade||''}</span>
+    return `<div class="item" style="gap:8px;"><span style="flex:1">${escAttr(x.nome||'?')}${x.cor?' · '+escAttr(x.cor):''}${Number(r.quantidade)?'':' <span style="color:#b7791f;font-size:12px;">⚠️ falta quantidade</span>'}</span>
+      <input inputmode="decimal" style="width:80px;text-align:right;" value="${Number(r.quantidade)?String(r.quantidade).replace('.',','):''}" placeholder="?" onchange="receitaQtd('${r.id}',this.value,'${compId}')"><span class="muted" style="font-size:12px;">${x.unidade||''}</span>
       <button class="btn sm ghost" style="color:var(--danger);" onclick="receitaTirar('${r.id}','${compId}')">✕</button></div>`; }).join('') +
     `${(rec||[]).length ? '' : `<p class="muted" style="font-size:13px;margin:0 0 6px;">Escolha de qual <b>tecido do rolo</b> essa peça é cortada e quanto cada peça gasta. Assim, quando você marcar <b>✂️ Cortei</b>, o rolo desce sozinho.</p>`}
      <label style="font-size:12px;margin:4px 0 2px;">Tecido / material</label>
@@ -3102,15 +3102,15 @@ async function receitaRender(compId){
        ${(()=>{ const rolos=(mats||[]).filter(x=>x.categoria==='Tecidos e sintéticos' && !ehCortado(x)); const outros=(mats||[]).filter(x=>!ehCortado(x) && !(x.categoria==='Tecidos e sintéticos')); const op=x=>`<option value="${x.id}" data-un="${x.unidade||''}">${escAttr(x.nome)}${x.cor?' · '+escAttr(x.cor):''}</option>`; return `<optgroup label="Tecidos em rolo">${rolos.map(op).join('')}</optgroup><optgroup label="Outros materiais">${outros.map(op).join('')}</optgroup>`; })()}
      </select>
      <label id="rec-un" style="font-size:12px;margin:6px 0 2px;">Quanto gasta por peça</label>
-     <div class="row" style="gap:6px;"><input id="rec-q" inputmode="decimal" placeholder="Ex: 0,60" style="flex:1"><button class="btn sm" onclick="receitaAdd('${compId}')">Adicionar</button></div>
-     <div style="display:flex;justify-content:space-between;margin-top:8px;"><strong>Custo por peça</strong><strong>${money(custo)}</strong></div>`;
-  if((rec||[]).length) await sb.from('materiais').update({ preco: +custo.toFixed(2), embalagem: null, qtd_por_embalagem: null }).eq('id', compId);
+     <div class="row" style="gap:6px;"><input id="rec-q" inputmode="decimal" placeholder="Pode deixar vazio" style="flex:1"><button class="btn sm" onclick="receitaAdd('${compId}')">Adicionar</button></div>
+     <div style="display:flex;justify-content:space-between;margin-top:8px;"><strong>Custo por peça</strong><strong>${(rec||[]).some(r=>!Number(r.quantidade))?'<span class="muted" style="font-weight:400;font-size:13px;">falta quantidade</span>':money(custo)}</strong></div>`;
+  if((rec||[]).length && (rec||[]).every(r=>Number(r.quantidade)>0)) await sb.from('materiais').update({ preco: +custo.toFixed(2), embalagem: null, qtd_por_embalagem: null }).eq('id', compId);
 }
 async function receitaQtd(id, v, compId){ await sb.from('material_receita').update({ quantidade: Number(String(v).replace(',','.'))||0 }).eq('id', id); receitaRender(compId); }
 async function receitaTirar(id, compId){ await sb.from('material_receita').delete().eq('id', id); receitaRender(compId); }
 async function receitaAdd(compId){
   const mid = document.getElementById('rec-mat').value, q = Number(String(document.getElementById('rec-q').value).replace(',','.'))||0;
-  if(!mid || !q){ alert('Escolha o material e a quantidade.'); return; }
+  if(!mid){ alert('Escolha o material.'); return; }
   const { error } = await sb.from('material_receita').upsert({ componente_id: compId, material_id: mid, quantidade: q }, { onConflict: 'componente_id,material_id' });
   if(error){ alert(error.message); return; }
   receitaRender(compId);
