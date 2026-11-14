@@ -35,6 +35,9 @@
   .tot{ font-size:19px; font-weight:700; border-top:2px solid var(--ink); margin-top:6px; padding-top:10px; }
   .btn{ display:block; width:100%; border:0; border-radius:12px; padding:14px; font-size:16px; font-weight:600; cursor:pointer; background:var(--ok); color:#fff; font-family:inherit; }
   .kit{ font-weight:700; margin:6px 0 2px; }
+  .cols{ display:flex; gap:8px; width:100%; margin-top:6px; padding-top:6px; border-top:1px dashed var(--border); font-size:15px; }
+  .cols > div{ flex:1; }
+  .cols span{ display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
   .center{ text-align:center; }
   #zoom{ position:fixed; inset:0; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; z-index:50; padding:16px; }
   #zoom img{ max-width:100%; max-height:100%; border-radius:10px; }
@@ -83,12 +86,13 @@ async function iniciar(){
   // agrupa kits
   const grupos = {}, avulsas = [];
   d.pecas.forEach(p => { if(p.kit_grupo){ (grupos[p.kit_grupo] = grupos[p.kit_grupo] || []).push(p); } else avulsas.push(p); });
+  const cols = (q, u, t) => `<div class="cols"><div><span>Quantidade</span>${q}</div><div style="text-align:center"><span>Valor unitário</span>${money(u)}</div><div style="text-align:right"><span>Valor total</span><b>${money(t)}</b></div></div>`;
   let pecasHtml = Object.values(grupos).map(g => { const k = g[0], tk = g.reduce((s,p)=>s+linha(p),0), n = Number(k.kit_qtd)||1;
-    return `<div class="kit">📦 ${esc(k.kit||'Conjunto')} × ${n}</div><div class="muted" style="font-size:13px;">${money(tk/n)} cada · total ${money(tk)}</div>` +
-      g.map(p => `<div class="item">${foto(p)}<div style="flex:1"><div>${esc(p.nome)}</div><span class="pill ${p.status}">${ST[p.status]||''}</span></div></div>`).join(''); }).join('');
-  pecasHtml += avulsas.map(p => `<div class="item">${foto(p)}<div style="flex:1"><div><b>${esc(p.nome)}</b> × ${p.quantidade}</div>
-      <div class="muted" style="font-size:13px;">${money(p.valor)} cada${Number(p.desconto)?` · ${String(Math.round(p.desconto*10)/10).replace('.',',')}% desc.`:''}</div>
-      <span class="pill ${p.status}">${ST[p.status]||''}</span></div><b style="white-space:nowrap">${money(linha(p))}</b></div>`).join('');
+    return `<div class="kit">📦 ${esc(k.kit||'Conjunto')}</div>${cols(n, tk/n, tk)}` +
+      g.map(p => `<div class="item">${foto(p)}<div style="flex:1"><div>${esc(p.nome)}</div><div class="muted" style="font-size:13px;">Quantidade: ${p.quantidade}</div><span class="pill ${p.status}">${ST[p.status]||''}</span></div></div>`).join(''); }).join('');
+  pecasHtml += avulsas.map(p => { const q = Number(p.quantidade)||0, t = linha(p); return `<div class="item" style="flex-wrap:wrap;">${foto(p)}<div style="flex:1"><div><b>${esc(p.nome)}</b></div>
+      ${Number(p.desconto)?`<div class="muted" style="font-size:13px;">${String(Math.round(p.desconto*10)/10).replace('.',',')}% de desconto</div>`:''}
+      <span class="pill ${p.status}">${ST[p.status]||''}</span></div>${cols(q, q?t/q:0, t)}</div>`; }).join('');
   const codigo = falta > 0 ? pixCopiaCola(Math.round(falta*100)/100, 'PED' + d.numero) : '';
   app.innerHTML = `
     <img src="../logo.jpg" alt="Zênite Paramentos" style="width:110px;height:110px;border-radius:16px;display:block;margin:0 auto 14px;">
