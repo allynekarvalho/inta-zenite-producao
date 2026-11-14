@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 17:10</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 17:20</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -3137,7 +3137,7 @@ async function receitaRender(compId){
      <label style="font-size:12px;margin:4px 0 2px;">Tecido / material</label>
      <select id="rec-mat" onchange="const o=this.options[this.selectedIndex]; document.getElementById('rec-un').textContent = o.dataset.un ? ('Quanto gasta por peça (em '+(o.dataset.un==='m'?'metros':o.dataset.un==='cm'?'centímetros':'peças')+')') : 'Quanto gasta por peça';">
        <option value="">Escolher...</option>
-       ${(()=>{ const rolos=(mats||[]).filter(x=>x.categoria==='Tecidos e sintéticos' && !ehCortado(x)); const outros=(mats||[]).filter(x=>!ehCortado(x) && !(x.categoria==='Tecidos e sintéticos')); const op=x=>`<option value="${x.id}" data-un="${x.unidade||''}">${escAttr(x.nome)}${x.cor?' · '+escAttr(x.cor):''}</option>`; return `<optgroup label="Tecidos em rolo">${rolos.map(op).join('')}</optgroup><optgroup label="Outros materiais">${outros.map(op).join('')}</optgroup>`; })()}
+       ${(()=>{ const rolos=(mats||[]).filter(x=>x.categoria==='Tecidos e sintéticos' && !ehCortado(x)); const outros=(mats||[]).filter(x=>!ehCortado(x) && !(x.categoria==='Tecidos e sintéticos')); const op=x=>`<option value="${x.id}" data-un="${x.unidade||''}">${escAttr(x.nome)}${x.cor?' · '+escAttr(x.cor):''}</option>`; const cortes=(mats||[]).filter(x=>ehCortado(x) && x.id!==compId && x.categoria!=='Cortes de forro' && x.categoria!=='Forro' && !/·/.test(x.nome||'')); return `<optgroup label="Tecidos em rolo">${rolos.map(op).join('')}</optgroup>${cortes.length?`<optgroup label="Peças já cortadas">${cortes.map(op).join('')}</optgroup>`:''}<optgroup label="Outros materiais">${outros.map(op).join('')}</optgroup>`; })()}
      </select>
      <label id="rec-un" style="font-size:12px;margin:6px 0 2px;">Quanto gasta por peça</label>
      <div class="row" style="gap:6px;"><input id="rec-q" inputmode="decimal" placeholder="Pode deixar vazio" style="flex:1"><button class="btn sm" onclick="receitaAdd('${compId}')">Adicionar</button></div>
