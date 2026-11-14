@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 09:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 10:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1024,6 +1024,9 @@ async function uploadParaStorage(prefixoPasta, file){
 
 // ===== Lista de materiais do produto (reaproveita o cadastro de Materiais/estoque) =====
 const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Bordados','Corpos e abetas','Outro'];
+const SUBCATS_MATERIAL = { 'Orlado': ['Fitas','Armarinhos','Cortes tecidos'] };
+window._pmAberto = window._pmAberto || {}; window._pmSub = window._pmSub || {};
+function subDe(m){ const subs = SUBCATS_MATERIAL[m.categoria||'Outro']; if(!subs) return ''; return subs.includes(m.subcategoria) ? m.subcategoria : subs[1]; }
 function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-'); }
 window._pmSel = window._pmSel || {};
 
@@ -1052,10 +1055,10 @@ function materialChipsHtml(prefix, materiais, selecionados){
   return (materiais||[]).map(m => {
     const ativo = (m.id in selecionados) ? 'active' : '';
     if(m.foto_url){
-      return `<button type="button" class="chip chip-foto ${ativo}" data-nome="${m.nome.toLowerCase()}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">
+      return `<button type="button" class="chip chip-foto ${ativo}" data-nome="${m.nome.toLowerCase()}" data-sub="${subDe(m)}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">
         <img src="${m.foto_url}" alt=""><span>${m.nome}</span></button>`;
     }
-    return `<button type="button" class="chip ${ativo}" data-nome="${m.nome.toLowerCase()}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">${m.nome}</button>`;
+    return `<button type="button" class="chip ${ativo}" data-nome="${m.nome.toLowerCase()}" data-sub="${subDe(m)}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">${m.nome}</button>`;
   }).join('') || '<p class="muted" style="padding:4px 0;">Nenhum material cadastrado ainda.</p>';
 }
 function toggleMaterialSelecionado(prefix, materialId){
@@ -1112,7 +1115,8 @@ function rerenderMateriaisProduto(prefix){
   CATEGORIAS_MATERIAL.forEach(cat => {
     const slug = slugCat(cat);
     const el = document.getElementById(`${prefix}-mat-chips-${slug}`);
-    if(el) el.innerHTML = materialChipsHtml(prefix, (window._prodMateriais||{})[cat]||[], window._pmSel[prefix]||{});
+    if(el){ el.innerHTML = materialChipsHtml(prefix, (window._prodMateriais||{})[cat]||[], window._pmSel[prefix]||{}); catFiltrar(prefix, cat); }
+    const cn = document.getElementById(`${prefix}-mat-n-${slug}`); if(cn){ const n = catQtdSel(prefix, cat); cn.textContent = n ? `${n} escolhido${n>1?'s':''}` : ''; }
   });
   CATEGORIAS_MATERIAL.forEach(cat => { const d = document.getElementById(`${prefix}-mat-sel-${slugCat(cat)}`); if(d) d.innerHTML = selecionadosMateriaisHtml(prefix, cat); });
   atualizarCustoProduto(prefix);
@@ -1122,7 +1126,8 @@ async function criarMaterialRapido(prefix, categoria){
   const input = document.getElementById(`${prefix}-novo-mat-${slug}`);
   const nome = input.value.trim();
   if(!nome) return;
-  const { data, error } = await sb.from('materiais').insert({ nome, categoria, unidade: 'peça' }).select().single();
+  const subs = SUBCATS_MATERIAL[categoria]; const sub = subs ? ((window._pmSub[prefix]||{})[slug] || subs[0]) : null;
+  const { data, error } = await sb.from('materiais').insert(Object.assign({ nome, categoria, unidade: 'peça' }, sub?{subcategoria:sub}:{})).select().single();
   if(error){ alert(error.message); return; }
   window._prodMateriais[categoria] = window._prodMateriais[categoria] || [];
   window._prodMateriais[categoria].push(data);
@@ -1132,26 +1137,60 @@ async function criarMaterialRapido(prefix, categoria){
   input.value = '';
   rerenderMateriaisProduto(prefix);
 }
+function catQtdSel(prefix, cat){ const sel = window._pmSel[prefix]||{}; return Object.keys(sel).filter(id => { const m = materialDe(id); return m && (m.categoria||'Outro')===cat; }).length; }
+function catToggle(prefix, cat){
+  const slug = slugCat(cat); window._pmAberto[prefix] = window._pmAberto[prefix]||{};
+  const ab = !window._pmAberto[prefix][slug]; window._pmAberto[prefix][slug] = ab;
+  const b = document.getElementById(`${prefix}-mat-body-${slug}`); if(b) b.style.display = ab ? 'block' : 'none';
+  const a = document.getElementById(`${prefix}-mat-seta-${slug}`); if(a) a.textContent = ab ? '▾' : '▸';
+}
+function catSub(prefix, cat, sub){
+  const slug = slugCat(cat); window._pmSub[prefix] = window._pmSub[prefix]||{}; window._pmSub[prefix][slug] = sub;
+  document.querySelectorAll(`#${prefix}-mat-tabs-${slug} .seg-btn`).forEach(b => b.classList.toggle('active', b.dataset.sub===sub));
+  const bx = document.getElementById(`${prefix}-busca-mat-${slug}`); if(bx) bx.value='';
+  const nv = document.getElementById(`${prefix}-novo-mat-${slug}`); if(nv) nv.placeholder = `Novo material em ${sub}`;
+  catFiltrar(prefix, cat);
+}
+function catFiltrar(prefix, cat){
+  const slug = slugCat(cat), subs = SUBCATS_MATERIAL[cat];
+  const sub = subs ? ((window._pmSub[prefix]||{})[slug] || subs[0]) : '';
+  const bx = document.getElementById(`${prefix}-busca-mat-${slug}`); const q = (bx && bx.value || '').toLowerCase().trim();
+  document.querySelectorAll(`#${prefix}-mat-chips-${slug} .chip`).forEach(el => {
+    const ok = q ? el.dataset.nome.includes(q) : (!sub || el.dataset.sub === sub);
+    el.style.display = ok ? 'inline-flex' : 'none';
+  });
+}
 function categoriaMateriaisHtml(prefix, categoria){
   const slug = slugCat(categoria);
   const materiais = (window._prodMateriais||{})[categoria] || [];
+  const subs = SUBCATS_MATERIAL[categoria];
+  const ab = !!((window._pmAberto[prefix]||{})[slug]);
+  const sub = subs ? ((window._pmSub[prefix]||{})[slug] || subs[0]) : '';
+  const n = catQtdSel(prefix, categoria);
+  setTimeout(() => catFiltrar(prefix, categoria), 0);
   return `
-    <h2 style="font-size:15px;margin-top:18px;">${categoria}</h2>
-    <input placeholder="Buscar ${categoria.toLowerCase()}..." oninput="filtrarChips(this.id,'${prefix}-mat-chips-${slug}')" id="${prefix}-busca-mat-${slug}">
-    <div id="${prefix}-mat-chips-${slug}" class="chips">
-      ${materialChipsHtml(prefix, materiais, window._pmSel[prefix]||{})}
-    </div>
+    <button type="button" onclick="catToggle('${prefix}','${categoria}')" style="display:flex;width:100%;justify-content:space-between;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:10px;color:var(--text);cursor:pointer;">
+      <span style="font-family:inherit;font-size:15px;font-weight:700;"><span id="${prefix}-mat-seta-${slug}">${ab?'▾':'▸'}</span> ${categoria}</span>
+      <span class="muted" style="font-size:12px;"><span id="${prefix}-mat-n-${slug}">${n?`${n} escolhido${n>1?'s':''}`:''}</span> · ${materiais.length}</span>
+    </button>
     <div id="${prefix}-mat-sel-${slug}">${selecionadosMateriaisHtml(prefix, categoria)}</div>
-    <div class="row" style="margin-top:6px;">
-      <input id="${prefix}-novo-mat-${slug}" placeholder="Nome do novo material">
-      <button type="button" class="btn ghost sm" onclick="criarMaterialRapido('${prefix}','${categoria}')">+ Adicionar</button>
+    <div id="${prefix}-mat-body-${slug}" style="display:${ab?'block':'none'};padding:8px 2px 4px;">
+      ${subs ? `<div class="segmented" id="${prefix}-mat-tabs-${slug}" style="margin:4px 0 8px;">${subs.map(sb2=>`<button type="button" class="seg-btn ${sb2===sub?'active':''}" data-sub="${sb2}" onclick="catSub('${prefix}','${categoria}','${sb2}')">${sb2}</button>`).join('')}</div>` : ''}
+      <input placeholder="Buscar ${categoria.toLowerCase()}..." oninput="catFiltrar('${prefix}','${categoria}')" id="${prefix}-busca-mat-${slug}">
+      <div id="${prefix}-mat-chips-${slug}" class="chips">
+        ${materialChipsHtml(prefix, materiais, window._pmSel[prefix]||{})}
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <input id="${prefix}-novo-mat-${slug}" placeholder="${sub?`Novo material em ${sub}`:'Nome do novo material'}">
+        <button type="button" class="btn ghost sm" onclick="criarMaterialRapido('${prefix}','${categoria}')">+ Adicionar</button>
+      </div>
     </div>
   `;
 }
 function listaMateriaisHtml(prefix, outrosAviamentos){
   return `
     <h2 style="font-size:15px;margin-top:22px;">Lista de materiais</h2>
-    <p class="muted">Toque no material para escolher (fica azul) e coloque a medida usada logo abaixo. Pode escolher mais de um por categoria.</p>
+    <p class="muted">Toque na categoria para abrir, escolha o material (fica azul) e coloque a medida usada. Pode escolher mais de um por categoria.</p>
     ${CATEGORIAS_MATERIAL.map(cat=>categoriaMateriaisHtml(prefix, cat)).join('')}
     <label style="margin-top:14px;">🧵 Nível de costura (o que a costureira recebe)</label>
     <select id="${prefix}-servico" onchange="window._pmServ=window._pmServ||{}; window._pmServ['${prefix}']=this.value||null; atualizarCustoProduto('${prefix}')">
@@ -2859,9 +2898,12 @@ function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
     <label>Nome do material</label><input id="${p}-nome" value="${escAttr(m.nome)}" placeholder="Ex: Fita de gorgurão">
     <label>Categoria</label>
     <div class="chips" id="${p}-cat-chips">
-      ${CATEGORIAS_MATERIAL.map(ct=>`<button type="button" class="chip ${m.categoria===ct?'active':''}" onclick="document.getElementById('${p}-categoria').value='${ct}'; document.querySelectorAll('#${p}-cat-chips .chip').forEach(b=>b.classList.toggle('active', b.textContent==='${ct}'));">${ct}</button>`).join('')}
+      ${CATEGORIAS_MATERIAL.map(ct=>`<button type="button" class="chip ${m.categoria===ct?'active':''}" onclick="document.getElementById('${p}-categoria').value='${ct}'; document.querySelectorAll('#${p}-cat-chips .chip').forEach(b=>b.classList.toggle('active', b.textContent==='${ct}')); var sw=document.getElementById('${p}-sub-w'); if(sw) sw.style.display=SUBCATS_MATERIAL['${ct}']?'block':'none';">${ct}</button>`).join('')}
     </div>
     <input type="hidden" id="${p}-categoria" value="${escAttr(m.categoria)}">
+    <div id="${p}-sub-w" style="display:${SUBCATS_MATERIAL[m.categoria]?'block':'none'}"><label>Tipo</label>
+      <div class="chips" id="${p}-sub-chips">${(SUBCATS_MATERIAL['Orlado']).map(sb2=>`<button type="button" class="chip ${subDe(m)===sb2&&m.categoria==='Orlado'?'active':''}" onclick="document.getElementById('${p}-subcategoria').value='${sb2}'; document.querySelectorAll('#${p}-sub-chips .chip').forEach(b=>b.classList.toggle('active', b.textContent==='${sb2}'));">${sb2}</button>`).join('')}</div>
+      <input type="hidden" id="${p}-subcategoria" value="${escAttr(m.subcategoria)}"></div>
     <div class="row">
       <div><label>Cor</label><input id="${p}-cor" value="${escAttr(m.cor)}" placeholder="Ex: Azul royal"></div>
       <div><label>Nº da cor</label><input id="${p}-numero" value="${escAttr(m.numero)}" placeholder="Ex: 126"></div>
@@ -2931,7 +2973,7 @@ async function lerFormMaterial(p, msg){
   }
   const v = id => document.getElementById(`${p}-${id}`).value.trim() || null;
   return {
-    nome, categoria: v('categoria'), marca: v('marca'), cor: v('cor'), numero: v('numero'), tamanho: v('tamanho'),
+    nome, categoria: v('categoria'), subcategoria: (SUBCATS_MATERIAL[v('categoria')] ? (v('subcategoria')||null) : null), marca: v('marca'), cor: v('cor'), numero: v('numero'), tamanho: v('tamanho'),
     unidade: document.getElementById(`${p}-unidade`).value,
     embalagem: document.getElementById(`${p}-emb`).value || null,
     preco: (parseFloat(String(document.getElementById(`${p}-preco`).value).replace(/\./g,'').replace(',','.'))||null),
