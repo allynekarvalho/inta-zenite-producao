@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 10:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 14:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1055,10 +1055,10 @@ function materialChipsHtml(prefix, materiais, selecionados){
   return (materiais||[]).map(m => {
     const ativo = (m.id in selecionados) ? 'active' : '';
     if(m.foto_url){
-      return `<button type="button" class="chip chip-foto ${ativo}" data-nome="${m.nome.toLowerCase()}" data-sub="${subDe(m)}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">
-        <img src="${m.foto_url}" alt=""><span>${m.nome}</span></button>`;
+      return `<button type="button" class="chip chip-foto ${ativo}" data-nome="${(m.nome+' '+(m.cor||'')).toLowerCase()}" data-sub="${subDe(m)}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">
+        <img src="${m.foto_url}" alt=""><span>${m.nome}${m.cor?' · '+m.cor:''}</span></button>`;
     }
-    return `<button type="button" class="chip ${ativo}" data-nome="${m.nome.toLowerCase()}" data-sub="${subDe(m)}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">${m.nome}</button>`;
+    return `<button type="button" class="chip ${ativo}" data-nome="${m.nome.toLowerCase()}" data-sub="${subDe(m)}" onclick="toggleMaterialSelecionado('${prefix}','${m.id}')">${m.nome}${m.cor?' · '+m.cor:''}</button>`;
   }).join('') || '<p class="muted" style="padding:4px 0;">Nenhum material cadastrado ainda.</p>';
 }
 function toggleMaterialSelecionado(prefix, materialId){
@@ -2764,6 +2764,7 @@ async function renderMateriais(){
   const { data: materiais, error } = await sb.from('materiais').select('*, fornecedores(nome)').order('nome');
   if(error){ c.innerHTML = `<p class="error">${error.message}</p>`; return; }
   window._estoqueCache = materiais||[];
+  try{ const { data: rcs } = await sb.from('material_receita').select('componente_id,material_id,quantidade'); window._receitas = {}; (rcs||[]).forEach(r => { (window._receitas[r.componente_id] = window._receitas[r.componente_id]||[]).push(r); }); }catch(e){ window._receitas = {}; }
   const comprar = (materiais||[]).filter(m => situacaoMaterial(m) !== 'ok');
   const filtro = state.estoqueCat || 'Todas';
   const cats = ['Todas', ...CATEGORIAS_MATERIAL];
@@ -2830,11 +2831,12 @@ function filtrarEstoque(){
           <div style="text-align:right;white-space:nowrap;">
             <div style="font-size:17px;font-weight:700;color:${cor};">${fmtEstoque(m, m.estoque_atual)}</div>
             ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtEstoque(m, m.estoque_minimo)}</div>`:''}
+            ${(m.categoria==='Forro'||m.categoria==='Corpos e abetas') ? daParaCortarHtml(m) : ''}
             ${Number(m.preco)>0?`<div class="muted" style="font-size:11px;">${money(m.preco)} / ${m.embalagem||m.unidade}</div>`:''}
           </div>
         </div>
         <div class="row" style="margin-top:10px;">
-          ${m.categoria==='Corpos e abetas' ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">+ Produzi (corte/bordado)</button>` : `<button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>`}
+          ${m.categoria==='Corpos e abetas' ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">+ Produzi (corte/bordado)</button>` : m.categoria==='Forro' ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">✂️ Cortei</button><button class="btn ghost sm" onclick="novaCorForro('${m.id}')">+ Nova cor</button>` : `<button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>`}
           <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
         </div>
       </div>`; }).join('')}
@@ -3008,13 +3010,13 @@ async function editarMaterial(id){
   showModal(`
     <h2>${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     ${formMaterialHtml('em', m, fornecedores, opcoesComFoto)}
-    ${m.categoria==='Corpos e abetas' ? `<label style="margin-top:14px;">🧾 Do que é feito (por peça)</label><div id="rec-box" class="card muted">Carregando...</div>` : ''}
+    ${(m.categoria==='Corpos e abetas'||m.categoria==='Forro') ? `<label style="margin-top:14px;">🧾 Do que é feito (por peça)</label><div id="rec-box" class="card muted">Carregando...</div>` : ''}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoMaterial('${id}')">Salvar</button>
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirMaterial('${id}')">Excluir material</button>
     <p id="em-msg" class="error"></p>
   `);
   atualizarEmbForm('em');
-  if(m.categoria==='Corpos e abetas') receitaRender(id);
+  if(m.categoria==='Corpos e abetas'||m.categoria==='Forro') receitaRender(id);
 }
 // ===== Corpos e abetas: receita (do que é feito) e produção =====
 async function receitaRender(compId){
@@ -3043,9 +3045,25 @@ async function receitaAdd(compId){
   if(error){ alert(error.message); return; }
   receitaRender(compId);
 }
+function daParaCortarHtml(m){
+  const rec = (window._receitas||{})[m.id] || []; if(!rec.length) return `<div class="muted" style="font-size:11px;">sem "do que é feito"</div>`;
+  let n = Infinity;
+  rec.forEach(r => { const mt = (window._estoqueCache||[]).find(x => x.id===r.material_id); const q = Number(r.quantidade)||0; if(q>0) n = Math.min(n, Math.floor((Number(mt&&mt.estoque_atual)||0)/q)); });
+  if(!isFinite(n)) return '';
+  return `<div style="font-size:11px;color:${n>0?'var(--muted)':'var(--danger)'};">✂️ dá p/ cortar +${Math.max(n,0)}</div>`;
+}
+async function novaCorForro(id){
+  const m = (window._estoqueCache||[]).find(x=>x.id===id); if(!m) return;
+  const cor = prompt(`Nova cor de "${m.nome}":`); if(!cor || !cor.trim()) return;
+  const novo = { nome:m.nome, categoria:m.categoria, subcategoria:m.subcategoria||null, unidade:m.unidade||'peça', cor:cor.trim(), estoque_atual:0, estoque_minimo:m.estoque_minimo||null, embalagem:m.embalagem||null, qtd_por_embalagem:m.qtd_por_embalagem||null, preco:m.preco||null, fornecedor_id:m.fornecedor_id||null };
+  const { data, error } = await sb.from('materiais').insert(novo).select().single();
+  if(error){ alert(error.message); return; }
+  alert(`Criado: ${m.nome} · ${cor.trim()}. Agora abra em Editar e coloque em "Do que é feito" o tecido dessa cor.`);
+  loadTab();
+}
 function produziComponente(id){
   const m = (window._estoqueCache||[]).find(x=>x.id===id) || {};
-  showModal(`<h2>${escAttr(m.nome||'')} <button class="close" onclick="closeModal()">&times;</button></h2>
+  showModal(`<h2>${escAttr(m.nome||'')}${m.cor?' · '+escAttr(m.cor):''} <button class="close" onclick="closeModal()">&times;</button></h2>
     <p class="muted" style="font-size:13px;">Quantas peças foram cortadas/bordadas? O estoque desta peça sobe e os materiais usados (tecido, nylon...) dão baixa sozinhos.</p>
     <label>Quantidade</label><input id="pz-qtd" type="number" min="1" inputmode="numeric">
     <button class="btn block gold" style="margin-top:12px;" onclick="salvarProduzi('${id}')">Lançar</button><p id="pz-msg" class="error"></p>`);
