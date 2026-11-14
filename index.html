@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 15:15</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 15:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1825,18 +1825,24 @@ async function salvarCliente(clienteId, pedidoId){
   if(error){ document.getElementById('ec-msg').textContent = error.message; return; }
   closeModal(); abrirPedido(pedidoId);
 }
+function colsValorHtml(qtd, unit, total, semPreco){
+  const c = (lbl, val, al, b) => `<div style="flex:1;text-align:${al};"><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;">${lbl}</div><div style="font-size:15px;${b?'font-weight:700;':''}">${val}</div></div>`;
+  return `<div style="display:flex;gap:8px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);">
+    ${c('Quantidade', qtd, 'left')}
+    ${semPreco ? `<div style="flex:2;text-align:right;color:var(--danger);font-size:12.5px;align-self:center;">sem preço — toque para colocar</div>` : c('Valor unitário', money(unit), 'center') + c('Valor total', money(total), 'right', true)}
+  </div>`;
+}
 function pecaItemHtml(p){
-  const niv = (window._nivelNome||{})[p.servico_id], v = vendaLinha(p);
-  return `<div class="item" onclick="closeModal(); editarPeca('${p.id}')" style="cursor:pointer;gap:10px;">
-    <div style="display:flex;gap:10px;align-items:center;min-width:0;flex:1;">
+  const v = vendaLinha(p), q = Number(p.quantidade)||0, unit = q ? v/q : 0;
+  return `<div class="item" onclick="closeModal(); editarPeca('${p.id}')" style="cursor:pointer;gap:10px;flex-direction:column;align-items:stretch;">
+    <div style="display:flex;gap:10px;align-items:center;min-width:0;">
       ${fichaThumbImg(p.fichas_tecnicas, 44)}
-      <div style="min-width:0;">
+      <div style="min-width:0;flex:1;">
         <div><strong>${escAttr(p.fichas_tecnicas?.nome||'Peça')}</strong></div>
-        <div class="muted" style="font-size:12.5px;">Qtd ${p.quantidade}${p.com_plastico?' · com plástico':''}</div>
-        <div class="muted" style="font-size:12.5px;">${STATUS_LABEL[p.status]}</div>
+        <div class="muted" style="font-size:12.5px;">${STATUS_LABEL[p.status]}${p.com_plastico?' · com plástico':''}${Number(p.desconto_pct)&&!p.kit_grupo?` · desconto ${String(Math.round(Number(p.desconto_pct)*10)/10).replace('.',',')}%`:''}</div>
       </div>
     </div>
-    ${p.kit_grupo ? '' : (p.valor_venda!=null ? `<strong style="white-space:nowrap;">${money(v)}</strong>` : '<span style="color:var(--danger);font-size:12px;white-space:nowrap;">sem preço</span>')}
+    ${p.kit_grupo ? `<div class="muted" style="font-size:12.5px;">Quantidade: <b>${p.quantidade}</b></div>` : colsValorHtml(p.quantidade, unit, v, p.valor_venda==null)}
   </div>`; }
 
 function vendaLinha(p){ return (Number(p.valor_venda)||0)*(Number(p.quantidade)||0)*(1-(Number(p.desconto_pct)||0)/100); }
@@ -1846,9 +1852,10 @@ function pedidoPecasHtml(pecas, pedidoId){
   pecas.forEach(p => { if(p.kit_grupo){ (grupos[p.kit_grupo] = grupos[p.kit_grupo] || []).push(p); } else avulsas.push(p); });
   const nomeKit = window._kitNome || {};
   return Object.values(grupos).map(g => { const k = g[0], tot = g.reduce((s,p)=>s+vendaLinha(p),0);
-    return `<details class="card" style="margin:8px 0;padding:10px 12px;"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px;">
-      <strong>📦 ${escAttr(nomeKit[k.kit_id]||'Conjunto')} × ${k.kit_qtd||1}</strong><strong>${money(tot)}</strong></summary>
-      <div class="muted" style="font-size:12px;margin:2px 0;">${money(tot/(k.kit_qtd||1))} cada${Number(k.desconto_pct)?` · desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}%`:''} · ver peças ›</div>
+    return `<details class="card" style="margin:8px 0;padding:10px 12px;"><summary style="cursor:pointer;list-style:none;display:block;">
+      <div style="display:flex;justify-content:space-between;gap:8px;"><strong>📦 ${escAttr(nomeKit[k.kit_id]||'Conjunto')}</strong><span class="muted" style="font-size:12px;">ver peças ›</span></div>
+      ${colsValorHtml(k.kit_qtd||1, tot/(k.kit_qtd||1), tot, false)}</summary>
+      ${Number(k.desconto_pct)?`<div class="muted" style="font-size:12px;margin:2px 0;">desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}%</div>`:''}
       ${g.map(pecaItemHtml).join('')}
       <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do conjunto</button><button class="btn sm" onclick="descontoKitPedido('${k.kit_grupo}','${pedidoId}')">% Desconto</button>
       <button class="btn sm ghost" style="color:var(--danger);" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">Tirar este conjunto do pedido</button></div></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
