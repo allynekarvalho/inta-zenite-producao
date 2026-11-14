@@ -2797,6 +2797,7 @@ async function renderMateriais(){
   c.innerHTML = html;
   filtrarEstoque();
 }
+function estTodas(abrir){ state.estAberto = state.estAberto||{}; CATEGORIAS_MATERIAL.forEach(ct => { state.estAberto[ct] = abrir; }); filtrarEstoque(); }
 function estToggle(ct){ state.estAberto = state.estAberto||{}; state.estAberto[ct] = !state.estAberto[ct]; filtrarEstoque(); }
 function filtrarEstoque(){
   const div = document.getElementById('est-lista'); if(!div) return;
@@ -2818,7 +2819,8 @@ function filtrarEstoque(){
   const ordem = CATEGORIAS_MATERIAL.filter(ct => grupos[ct] && !(escondeOutro && ct === 'Outro'));
   state.estAberto = state.estAberto || {}; state.estBuscaCat = state.estBuscaCat || {};
   const unico = ordem.length === 1;
-  div.innerHTML = ordem.map(ct => {
+  const todasAbertas = ordem.length>1 && ordem.every(ct => state.estAberto[ct]);
+  div.innerHTML = (ordem.length>1 && !q ? `<button type="button" class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="estTodas(${todasAbertas?'false':'true'})">${todasAbertas?'▴ Fechar todas':'▾ Ver todos os materiais'}</button>` : '') + ordem.map(ct => {
     const sc = slugCat(ct), aberto = unico || !!q || !!state.estAberto[ct];
     const qc = (state.estBuscaCat[ct]||'').toLowerCase().trim();
     const itens = qc ? grupos[ct].filter(m => [m.nome, m.marca, m.cor, m.numero, m.tamanho, m.subcategoria].filter(Boolean).join(' ').toLowerCase().includes(qc)) : grupos[ct];
