@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 15:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 15:15</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -3059,10 +3059,16 @@ async function receitaRender(compId){
     return `<div class="item" style="gap:8px;"><span style="flex:1">${escAttr(x.nome||'?')}</span>
       <input inputmode="decimal" style="width:80px;text-align:right;" value="${String(r.quantidade).replace('.',',')}" onchange="receitaQtd('${r.id}',this.value,'${compId}')"><span class="muted" style="font-size:12px;">${x.unidade||''}</span>
       <button class="btn sm ghost" style="color:var(--danger);" onclick="receitaTirar('${r.id}','${compId}')">✕</button></div>`; }).join('') +
-    `<div class="row" style="gap:6px;margin-top:8px;"><select id="rec-mat" style="flex:2"><option value="">+ material...</option>${(mats||[]).filter(x=>!ehCortado(x)).map(x=>`<option value="${x.id}">${escAttr(x.nome)}</option>`).join('')}</select>
-      <input id="rec-q" inputmode="decimal" placeholder="qtd" style="flex:1"><button class="btn sm" onclick="receitaAdd('${compId}')">Adicionar</button></div>
+    `${(rec||[]).length ? '' : `<p class="muted" style="font-size:13px;margin:0 0 6px;">Escolha de qual <b>tecido do rolo</b> essa peça é cortada e quanto cada peça gasta. Assim, quando você marcar <b>✂️ Cortei</b>, o rolo desce sozinho.</p>`}
+     <label style="font-size:12px;margin:4px 0 2px;">Tecido / material</label>
+     <select id="rec-mat" onchange="const o=this.options[this.selectedIndex]; document.getElementById('rec-un').textContent = o.dataset.un ? ('Quanto gasta por peça (em '+(o.dataset.un==='m'?'metros':o.dataset.un==='cm'?'centímetros':'peças')+')') : 'Quanto gasta por peça';">
+       <option value="">Escolher...</option>
+       ${(()=>{ const rolos=(mats||[]).filter(x=>x.categoria==='Tecidos e sintéticos' && !ehCortado(x)); const outros=(mats||[]).filter(x=>!ehCortado(x) && !(x.categoria==='Tecidos e sintéticos')); const op=x=>`<option value="${x.id}" data-un="${x.unidade||''}">${escAttr(x.nome)}${x.cor?' · '+escAttr(x.cor):''}</option>`; return `<optgroup label="Tecidos em rolo">${rolos.map(op).join('')}</optgroup><optgroup label="Outros materiais">${outros.map(op).join('')}</optgroup>`; })()}
+     </select>
+     <label id="rec-un" style="font-size:12px;margin:6px 0 2px;">Quanto gasta por peça</label>
+     <div class="row" style="gap:6px;"><input id="rec-q" inputmode="decimal" placeholder="Ex: 0,60" style="flex:1"><button class="btn sm" onclick="receitaAdd('${compId}')">Adicionar</button></div>
      <div style="display:flex;justify-content:space-between;margin-top:8px;"><strong>Custo por peça</strong><strong>${money(custo)}</strong></div>`;
-  await sb.from('materiais').update({ preco: +custo.toFixed(2), embalagem: null, qtd_por_embalagem: null }).eq('id', compId);
+  if((rec||[]).length) await sb.from('materiais').update({ preco: +custo.toFixed(2), embalagem: null, qtd_por_embalagem: null }).eq('id', compId);
 }
 async function receitaQtd(id, v, compId){ await sb.from('material_receita').update({ quantidade: Number(String(v).replace(',','.'))||0 }).eq('id', id); receitaRender(compId); }
 async function receitaTirar(id, compId){ await sb.from('material_receita').delete().eq('id', id); receitaRender(compId); }
