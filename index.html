@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 14:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 14:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1023,10 +1023,11 @@ async function uploadParaStorage(prefixoPasta, file){
 }
 
 // ===== Lista de materiais do produto (reaproveita o cadastro de Materiais/estoque) =====
-const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Bordados','Corpos e abetas','Outro'];
-const SUBCATS_MATERIAL = { 'Orlado': ['Fitas','Armarinhos','Cortes tecidos'] };
+const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Bordados','Outro'];
+function ehCortado(m){ return !!m && (m.categoria==='Forro' || m.categoria==='Corpos e abetas' || (m.categoria==='Tecidos e sintéticos' && m.subcategoria==='Cortados')); }
+const SUBCATS_MATERIAL = { 'Orlado': ['Fitas','Armarinhos','Cortes tecidos'], 'Tecidos e sintéticos': ['Rolos','Cortados'] };
 window._pmAberto = window._pmAberto || {}; window._pmSub = window._pmSub || {};
-function subDe(m){ const subs = SUBCATS_MATERIAL[m.categoria||'Outro']; if(!subs) return ''; return subs.includes(m.subcategoria) ? m.subcategoria : subs[1]; }
+function subDe(m){ const subs = SUBCATS_MATERIAL[m.categoria||'Outro']; if(!subs) return ''; return subs.includes(m.subcategoria) ? m.subcategoria : (m.categoria==='Orlado' ? subs[1] : subs[0]); }
 function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-'); }
 window._pmSel = window._pmSel || {};
 
@@ -2831,12 +2832,12 @@ function filtrarEstoque(){
           <div style="text-align:right;white-space:nowrap;">
             <div style="font-size:17px;font-weight:700;color:${cor};">${fmtEstoque(m, m.estoque_atual)}</div>
             ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtEstoque(m, m.estoque_minimo)}</div>`:''}
-            ${(m.categoria==='Forro'||m.categoria==='Corpos e abetas') ? daParaCortarHtml(m) : ''}
+            ${ehCortado(m) ? daParaCortarHtml(m) : ''}
             ${Number(m.preco)>0?`<div class="muted" style="font-size:11px;">${money(m.preco)} / ${m.embalagem||m.unidade}</div>`:''}
           </div>
         </div>
         <div class="row" style="margin-top:10px;">
-          ${m.categoria==='Corpos e abetas' ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">+ Produzi (corte/bordado)</button>` : m.categoria==='Forro' ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">✂️ Cortei</button><button class="btn ghost sm" onclick="novaCorForro('${m.id}')">+ Nova cor</button>` : `<button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>`}
+          ${ehCortado(m) ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">✂️ Cortei</button><button class="btn ghost sm" onclick="novaCorForro('${m.id}')">+ Nova cor</button>` : `<button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>`}
           <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
         </div>
       </div>`; }).join('')}
@@ -2893,6 +2894,17 @@ function atualizarEmbForm(p){
   document.getElementById(p+'-min-lbl').textContent = `Avisar com menos de (${e})`;
   const pl=document.getElementById(p+'-preco-lbl'); if(pl) pl.textContent = `Preço pago (R$) por ${emb||(un==='peça'?'peça':un==='m'?'metro':'centímetro')}`;
 }
+function matCatEscolhida(p, ct){
+  document.getElementById(p+'-categoria').value = ct;
+  document.querySelectorAll('#'+p+'-cat-chips .chip').forEach(b => b.classList.toggle('active', b.textContent===ct));
+  const sw = document.getElementById(p+'-sub-w'); if(!sw) return;
+  const ss = SUBCATS_MATERIAL[ct]; sw.style.display = ss ? 'block' : 'none';
+  if(ss){ document.getElementById(p+'-subcategoria').value = ss[0]; document.getElementById(p+'-sub-chips').innerHTML = ss.map((x,i) => `<button type="button" class="chip ${i===0?'active':''}" onclick="matSubEscolhida('${p}','${x}')">${x}</button>`).join(''); }
+}
+function matSubEscolhida(p, sub){
+  document.getElementById(p+'-subcategoria').value = sub;
+  document.querySelectorAll('#'+p+'-sub-chips .chip').forEach(b => b.classList.toggle('active', b.textContent===sub));
+}
 function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
   m = m || {};
   const un = m.unidade || 'm';
@@ -2900,11 +2912,11 @@ function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
     <label>Nome do material</label><input id="${p}-nome" value="${escAttr(m.nome)}" placeholder="Ex: Fita de gorgurão">
     <label>Categoria</label>
     <div class="chips" id="${p}-cat-chips">
-      ${CATEGORIAS_MATERIAL.map(ct=>`<button type="button" class="chip ${m.categoria===ct?'active':''}" onclick="document.getElementById('${p}-categoria').value='${ct}'; document.querySelectorAll('#${p}-cat-chips .chip').forEach(b=>b.classList.toggle('active', b.textContent==='${ct}')); var sw=document.getElementById('${p}-sub-w'); if(sw) sw.style.display=SUBCATS_MATERIAL['${ct}']?'block':'none';">${ct}</button>`).join('')}
+      ${CATEGORIAS_MATERIAL.map(ct=>`<button type="button" class="chip ${m.categoria===ct?'active':''}" onclick="matCatEscolhida('${p}','${ct}')">${ct}</button>`).join('')}
     </div>
     <input type="hidden" id="${p}-categoria" value="${escAttr(m.categoria)}">
     <div id="${p}-sub-w" style="display:${SUBCATS_MATERIAL[m.categoria]?'block':'none'}"><label>Tipo</label>
-      <div class="chips" id="${p}-sub-chips">${(SUBCATS_MATERIAL['Orlado']).map(sb2=>`<button type="button" class="chip ${subDe(m)===sb2&&m.categoria==='Orlado'?'active':''}" onclick="document.getElementById('${p}-subcategoria').value='${sb2}'; document.querySelectorAll('#${p}-sub-chips .chip').forEach(b=>b.classList.toggle('active', b.textContent==='${sb2}'));">${sb2}</button>`).join('')}</div>
+      <div class="chips" id="${p}-sub-chips">${(SUBCATS_MATERIAL[m.categoria]||SUBCATS_MATERIAL['Orlado']).map(sb2=>`<button type="button" class="chip ${SUBCATS_MATERIAL[m.categoria]&&subDe(m)===sb2?'active':''}" onclick="matSubEscolhida('${p}','${sb2}')">${sb2}</button>`).join('')}</div>
       <input type="hidden" id="${p}-subcategoria" value="${escAttr(m.subcategoria)}"></div>
     <div class="row">
       <div><label>Cor</label><input id="${p}-cor" value="${escAttr(m.cor)}" placeholder="Ex: Azul royal"></div>
@@ -3010,20 +3022,20 @@ async function editarMaterial(id){
   showModal(`
     <h2>${m.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     ${formMaterialHtml('em', m, fornecedores, opcoesComFoto)}
-    ${(m.categoria==='Corpos e abetas'||m.categoria==='Forro') ? `<label style="margin-top:14px;">🧾 Do que é feito (por peça)</label><div id="rec-box" class="card muted">Carregando...</div>` : ''}
+    ${ehCortado(m) ? `<label style="margin-top:14px;">🧾 Do que é feito (por peça)</label><div id="rec-box" class="card muted">Carregando...</div>` : ''}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoMaterial('${id}')">Salvar</button>
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirMaterial('${id}')">Excluir material</button>
     <p id="em-msg" class="error"></p>
   `);
   atualizarEmbForm('em');
-  if(m.categoria==='Corpos e abetas'||m.categoria==='Forro') receitaRender(id);
+  if(ehCortado(m)) receitaRender(id);
 }
 // ===== Corpos e abetas: receita (do que é feito) e produção =====
 async function receitaRender(compId){
   const box = document.getElementById('rec-box'); if(!box) return;
   const [{ data: rec }, { data: mats }] = await Promise.all([
     sb.from('material_receita').select('id,material_id,quantidade').eq('componente_id', compId),
-    sb.from('materiais').select('id,nome,unidade,preco,embalagem,qtd_por_embalagem,categoria').order('nome')]);
+    sb.from('materiais').select('id,nome,cor,unidade,preco,embalagem,qtd_por_embalagem,categoria,subcategoria').order('nome')]);
   const mm = {}; (mats||[]).forEach(x => mm[x.id] = x);
   let custo = 0;
   box.classList.remove('muted');
@@ -3031,7 +3043,7 @@ async function receitaRender(compId){
     return `<div class="item" style="gap:8px;"><span style="flex:1">${escAttr(x.nome||'?')}</span>
       <input inputmode="decimal" style="width:80px;text-align:right;" value="${String(r.quantidade).replace('.',',')}" onchange="receitaQtd('${r.id}',this.value,'${compId}')"><span class="muted" style="font-size:12px;">${x.unidade||''}</span>
       <button class="btn sm ghost" style="color:var(--danger);" onclick="receitaTirar('${r.id}','${compId}')">✕</button></div>`; }).join('') +
-    `<div class="row" style="gap:6px;margin-top:8px;"><select id="rec-mat" style="flex:2"><option value="">+ material...</option>${(mats||[]).filter(x=>x.categoria!=='Corpos e abetas').map(x=>`<option value="${x.id}">${escAttr(x.nome)}</option>`).join('')}</select>
+    `<div class="row" style="gap:6px;margin-top:8px;"><select id="rec-mat" style="flex:2"><option value="">+ material...</option>${(mats||[]).filter(x=>!ehCortado(x)).map(x=>`<option value="${x.id}">${escAttr(x.nome)}</option>`).join('')}</select>
       <input id="rec-q" inputmode="decimal" placeholder="qtd" style="flex:1"><button class="btn sm" onclick="receitaAdd('${compId}')">Adicionar</button></div>
      <div style="display:flex;justify-content:space-between;margin-top:8px;"><strong>Custo por peça</strong><strong>${money(custo)}</strong></div>`;
   await sb.from('materiais').update({ preco: +custo.toFixed(2), embalagem: null, qtd_por_embalagem: null }).eq('id', compId);
