@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zênite · Catálogo de paramentos</title>
+<meta property="og:title" content="Zênite · Catálogo de paramentos">
+<meta property="og:description" content="Aventais, colares, faixas, barretes e conjuntos.">
+<meta property="og:image" content="https://allynekarvalho.github.io/inta-zenite-producao/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:type" content="website">
+<link rel="icon" href="../apple-touch-icon.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+  :root{ --bg:#f6f3ec; --card:#fff; --ink:#1c2333; --muted:#6b6f7d; --gold:#a1783f; --border:#e2dccd; --ok:#2e7d4f; --royal:#1e3a6e; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:Inter,system-ui,sans-serif; font-size:15px; }
+  .wrap{ max-width:900px; margin:0 auto; padding:22px 16px 60px; }
+  header{ display:flex; align-items:center; gap:12px; }
+  header img{ width:54px; height:54px; border-radius:12px; object-fit:cover; }
+  .eyebrow{ color:var(--gold); font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin:0; }
+  h1{ font-family:Fraunces,Georgia,serif; font-weight:600; font-size:26px; margin:2px 0 0; }
+  h2{ font-family:Fraunces,Georgia,serif; font-weight:600; font-size:20px; margin:26px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+  .muted{ color:var(--muted); }
+  input{ width:100%; font:inherit; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:#fff; margin-top:16px; }
+  .chips{ display:flex; gap:8px; overflow-x:auto; padding:12px 0 2px; -webkit-overflow-scrolling:touch; }
+  .chip{ flex:none; border:1px solid var(--border); background:#fff; border-radius:20px; padding:7px 14px; font:inherit; font-size:14px; cursor:pointer; color:var(--ink); }
+  .chip.on{ background:var(--royal); border-color:var(--royal); color:#fff; }
+  .grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  @media(min-width:640px){ .grid{ grid-template-columns:repeat(3,1fr); } }
+  .card{ background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; display:flex; flex-direction:column; }
+  .ft{ aspect-ratio:1/1; background:#efe9dc; display:flex; align-items:center; justify-content:center; color:var(--gold); font-family:Fraunces,Georgia,serif; font-size:13px; cursor:zoom-in; position:relative; }
+  .ft img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .ft .n{ position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.55); color:#fff; font-size:11px; border-radius:10px; padding:1px 7px; font-family:Inter,sans-serif; }
+  .info{ padding:10px 12px 12px; display:flex; flex-direction:column; gap:3px; flex:1; }
+  .nome{ font-weight:600; font-size:14.5px; line-height:1.25; }
+  .tags{ font-size:12px; color:var(--muted); }
+  .preco{ font-size:17px; font-weight:700; margin-top:auto; padding-top:6px; }
+  .preco.c{ font-size:13px; font-weight:600; color:var(--gold); }
+  .kit{ grid-column:1/-1; flex-direction:row; }
+  .kit .mos{ width:42%; display:grid; grid-template-columns:1fr 1fr; gap:2px; background:#efe9dc; flex:none; }
+  .kit .mos img, .kit .mos div{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; background:#efe9dc; }
+  .kit ul{ margin:4px 0 0; padding-left:18px; font-size:13px; color:var(--muted); }
+  .center{ text-align:center; }
+  #zoom{ position:fixed; inset:0; background:rgba(0,0,0,.93); display:none; align-items:center; justify-content:center; z-index:50; padding:16px; flex-direction:column; gap:10px; }
+  #zoom img{ max-width:100%; max-height:80vh; border-radius:10px; }
+  #zoom .x{ position:absolute; top:calc(12px + env(safe-area-inset-top,0)); right:16px; color:#fff; font-size:34px; background:none; border:0; cursor:pointer; }
+  #zoom .nav{ display:flex; gap:20px; color:#fff; align-items:center; }
+  #zoom .nav button{ background:rgba(255,255,255,.15); color:#fff; border:0; border-radius:20px; font-size:22px; width:44px; height:44px; cursor:pointer; }
+  #zoom .cap{ color:#fff; font-weight:600; text-align:center; }
+  footer{ margin-top:34px; text-align:center; font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div id="zoom" onclick="if(event.target===this)fecharZoom()"><button class="x" onclick="fecharZoom()">&times;</button><img id="zoom-img" alt=""><div class="cap" id="zoom-cap"></div><div class="nav" id="zoom-nav"><button onclick="passo(-1)">‹</button><span id="zoom-n"></span><button onclick="passo(1)">›</button></div></div>
+<div class="wrap">
+  <header><img src="../logo.jpg" alt=""><div><p class="eyebrow">Zênite</p><h1>Catálogo de paramentos</h1></div></header>
+  <input id="busca" placeholder="🔍 Buscar (ex.: avental, grau 33, GOEMT...)" oninput="desenhar()" autocomplete="off">
+  <div class="chips" id="chips"></div>
+  <div id="lista"><p class="muted center" style="margin-top:50px;">Carregando catálogo...</p></div>
+  <footer>Preços sujeitos a alteração. Fale com a Zênite para fazer seu pedido.</footer>
+</div>
+<script>
+const SUPABASE_URL = "https://ldkgwtdlajoodwsattex.supabase.co";
+const SUPABASE_KEY = "sb_publishable_HUFpcJLnKSeQ3EiXXco0iw_PXv73xgO";
+const money = v => (Number(v)||0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm = t => String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+let D = { produtos:[], conjuntos:[] }, POT = '', Z = { fotos:[], i:0, nome:'' };
+window._fotos = [];
+function precoHtml(v){ return Number(v)>0 ? `<div class="preco">${money(v)}</div>` : `<div class="preco c">Sob consulta</div>`; }
+function fotoReg(fotos, nome){ window._fotos.push({ fotos, nome }); return window._fotos.length-1; }
+function abrirZoom(ix){ const r = window._fotos[ix]; if(!r || !r.fotos.length) return; Z = { fotos:r.fotos, i:0, nome:r.nome }; mostrarZoom(); document.getElementById('zoom').style.display='flex'; }
+function mostrarZoom(){ document.getElementById('zoom-img').src = Z.fotos[Z.i]; document.getElementById('zoom-cap').textContent = Z.nome;
+  document.getElementById('zoom-nav').style.display = Z.fotos.length>1 ? 'flex' : 'none'; document.getElementById('zoom-n').textContent = (Z.i+1)+' / '+Z.fotos.length; }
+function passo(d){ Z.i = (Z.i + d + Z.fotos.length) % Z.fotos.length; mostrarZoom(); }
+function fecharZoom(){ document.getElementById('zoom').style.display='none'; }
+function cardProduto(p){
+  const ix = fotoReg(p.fotos||[], p.nome), f = (p.fotos||[])[0];
+  const tags = [p.potencia && p.potencia!=='Todos' ? p.potencia : '', p.rito && p.rito!=='Todos' ? p.rito : '', p.cargo].filter(Boolean).join(' · ');
+  return `<div class="card"><div class="ft" onclick="abrirZoom(${ix})">${f?`<img loading="lazy" src="${esc(f)}" alt="">`:'Zênite'}${(p.fotos||[]).length>1?`<span class="n">${p.fotos.length} fotos</span>`:''}</div>
+    <div class="info"><div class="nome">${esc(p.nome)}</div>${tags?`<div class="tags">${esc(tags)}</div>`:''}${precoHtml(p.preco)}</div></div>`;
+}
+function cardConjunto(k){
+  const fotos = (k.itens||[]).map(i=>i.foto).filter(Boolean), ix = fotoReg(fotos, k.nome);
+  const mos = fotos.slice(0,4); while(mos.length && mos.length<4) mos.push('');
+  return `<div class="card kit"><div class="mos" onclick="abrirZoom(${ix})" style="cursor:zoom-in;">${mos.length?mos.map(u=>u?`<img loading="lazy" src="${esc(u)}" alt="">`:'<div></div>').join(''):'<div></div>'}</div>
+    <div class="info"><div class="nome" style="font-size:16px;">📦 ${esc(k.nome)}</div><ul>${(k.itens||[]).map(i=>`<li>${Number(i.qtd)>1?i.qtd+'× ':''}${esc(i.nome)}</li>`).join('')}</ul>${precoHtml(k.preco)}</div></div>`;
+}
+function desenhar(){
+  window._fotos = [];
+  const q = norm(document.getElementById('busca').value).split(/\s+/).filter(Boolean);
+  const casa = txt => q.every(w => norm(txt).includes(w));
+  const prods = D.produtos.filter(p => (p.fotos||[]).length && (!POT || p.potencia===POT || p.potencia==='Todos') && casa([p.nome,p.tipo,p.potencia,p.rito,p.cargo].join(' ')));
+  const kits = D.conjuntos.filter(k => !POT && true || norm(k.nome).includes(norm(POT))).filter(k => casa(k.nome + ' ' + (k.itens||[]).map(i=>i.nome).join(' ')));
+  const grupos = {}; prods.forEach(p => { const g = p.revenda ? 'Joias' : (p.tipo || 'Outros'); (grupos[g] = grupos[g] || []).push(p); });
+  const ordem = Object.keys(grupos).sort((a,b) => (a==='Outros')-(b==='Outros') || (a==='Joias')-(b==='Joias') || a.localeCompare(b));
+  let h = '';
+  if(kits.length) h += `<h2>Conjuntos</h2><div class="grid">${kits.map(cardConjunto).join('')}</div>`;
+  h += ordem.map(g => `<h2>${esc(g)}</h2><div class="grid">${grupos[g].sort((a,b)=>((b.fotos||[]).length>0)-((a.fotos||[]).length>0) || a.nome.localeCompare(b.nome)).map(cardProduto).join('')}</div>`).join('');
+  document.getElementById('lista').innerHTML = h || '<p class="muted center" style="margin-top:40px;">Nada encontrado.</p>';
+}
+function chips(){
+  const pots = [...new Set(D.produtos.filter(p=>(p.fotos||[]).length).map(p=>p.potencia).filter(p=>p && p!=='Todos'))].sort();
+  document.getElementById('chips').innerHTML = pots.length ? [['','Todos'],...pots.map(p=>[p,p])].map(([v,t]) => `<button class="chip ${POT===v?'on':''}" onclick="POT=${JSON.stringify(v).replace(/"/g,'&quot;')};chips();desenhar();">${esc(t)}</button>`).join('') : '';
+}
+(async () => {
+  try {
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const { data, error } = await sb.rpc('catalogo_publico');
+    if(error) throw error;
+    D = data || D; chips(); desenhar();
+  } catch(e){ document.getElementById('lista').innerHTML = '<p class="muted center" style="margin-top:50px;">Não foi possível carregar o catálogo. Tente de novo.</p>'; }
+})();
+</script>
+</body>
+</html>

@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 16:15</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 17:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -825,6 +825,12 @@ async function npConfirmarKit(){
     dia_producao: document.getElementById('kp-dia').value, com_plastico: document.getElementById('kp-plastico').checked, desconto: numBR(document.getElementById('kp-desc').value)||0 });
   await npMostrarForm();
 }
+function catalogoUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, '') + 'catalogo/'; }
+function catalogoEnviar(){
+  const txt = `Olá! Segue o catálogo de paramentos da *Zênite*:\n${catalogoUrl()}`;
+  if(navigator.share){ navigator.share({ text: txt }).catch(()=>{}); return; }
+  window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+}
 async function renderProdutos(){
   if(state.produtos && state.produtos.aba === 'kits') return renderKits();
   if(state.produtos && state.produtos.aba === 'joias') return renderJoias();
@@ -850,6 +856,7 @@ async function renderProdutos(){
 
   let html = `
     <div class="segmented"><button class="active">Produtos</button><button onclick="state.produtos.aba='kits';loadTab();">📦 Conjuntos</button><button onclick="state.produtos.aba='joias';loadTab();">💎 Joias</button></div>
+    <div class="row" style="gap:8px;margin-bottom:4px;"><button class="btn sm ghost" style="flex:1" onclick="catalogoEnviar()">📖 Enviar catálogo</button><button class="btn sm ghost" style="flex:0 0 auto;width:auto;padding:0 14px;" onclick="window.open(catalogoUrl(),'_blank')">Ver</button></div>
     <input id="prod-busca-geral" placeholder="🔍 Buscar produto (ex.: avental, 33, GOB...)" oninput="buscarProdutoGeral()" autocomplete="off">
     <div id="prod-busca-res"></div>
     <h2 style="font-size:15px;">Potência</h2>
@@ -1305,6 +1312,7 @@ async function abrirProduto(fichaId){
     <div class="row" style="gap:8px;">
       <div style="flex:1"><label>💰 Preço de venda (R$)</label><input id="epf-venda" inputmode="decimal" placeholder="0,00" value="${f.preco_venda!=null?String(f.preco_venda).replace('.',','):''}"></div>
     </div>
+    <label class="checkline" style="margin-top:8px;"><input type="checkbox" id="epf-catalogo" ${f.catalogo===false?'':'checked'}> 📖 Mostrar no catálogo</label>
     <label class="checkline" style="margin-top:8px;"><input type="checkbox" id="epf-revenda" ${f.revenda?'checked':''} onchange="document.getElementById('epf-compra-w').style.display=this.checked?'block':'none'"> Revenda (compramos pronto de outra empresa)</label>
     <div id="epf-compra-w" style="display:${f.revenda?'block':'none'};"><label>Custo de compra (R$)</label><input id="epf-compra" inputmode="decimal" placeholder="0,00" value="${f.custo_compra!=null?String(f.custo_compra).replace('.',','):''}"></div>
 
@@ -1368,6 +1376,7 @@ async function salvarEdicaoProduto(fichaId){
     unidade_producao: document.getElementById('epf-unidade').value.trim() || 'peça',
     preco_venda: numBR(document.getElementById('epf-venda').value),
     revenda: document.getElementById('epf-revenda').checked,
+    catalogo: document.getElementById('epf-catalogo').checked,
     custo_compra: numBR(document.getElementById('epf-compra').value),
     outros_aviamentos: document.getElementById('epf-outros_aviamentos').value.trim() || null,
     servico_id: (window._pmServ||{})['epf'] || null,
