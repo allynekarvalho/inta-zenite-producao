@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 14:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 15:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -2797,6 +2797,7 @@ async function renderMateriais(){
   c.innerHTML = html;
   filtrarEstoque();
 }
+function estToggle(ct){ state.estAberto = state.estAberto||{}; state.estAberto[ct] = !state.estAberto[ct]; filtrarEstoque(); }
 function filtrarEstoque(){
   const div = document.getElementById('est-lista'); if(!div) return;
   if((state.estoqueCat||'Todas') === 'Bordados') setTimeout(() => { let d = document.getElementById('est-bord-partes'); if(!d){ d = document.createElement('div'); d.id = 'est-bord-partes'; div.after(d); } renderBordados(d); }, 0);
@@ -2815,9 +2816,22 @@ function filtrarEstoque(){
   const escondeOutro = filtro === 'Todas' && !q && grupos['Outro'];
   const nOutro = escondeOutro ? grupos['Outro'].length : 0;
   const ordem = CATEGORIAS_MATERIAL.filter(ct => grupos[ct] && !(escondeOutro && ct === 'Outro'));
-  div.innerHTML = ordem.map(ct => `
-    <h2 style="font-size:15px;margin:16px 0 8px;">${ct} <span class="muted" style="font-family:Inter;font-weight:400;">(${grupos[ct].length})</span></h2>
-    ${grupos[ct].map(m => {
+  state.estAberto = state.estAberto || {}; state.estBuscaCat = state.estBuscaCat || {};
+  const unico = ordem.length === 1;
+  div.innerHTML = ordem.map(ct => {
+    const sc = slugCat(ct), aberto = unico || !!q || !!state.estAberto[ct];
+    const qc = (state.estBuscaCat[ct]||'').toLowerCase().trim();
+    const itens = qc ? grupos[ct].filter(m => [m.nome, m.marca, m.cor, m.numero, m.tamanho, m.subcategoria].filter(Boolean).join(' ').toLowerCase().includes(qc)) : grupos[ct];
+    const alertas = grupos[ct].filter(m => situacaoMaterial(m) !== 'ok').length;
+    return `
+    <button type="button" onclick="estToggle('${ct}')" style="display:flex;width:100%;justify-content:space-between;align-items:center;background:var(--card);border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:12px;padding:16px;margin-top:12px;color:var(--text);cursor:pointer;">
+      <span style="font-family:'Fraunces',Georgia,serif;font-size:20px;font-weight:700;text-align:left;">${aberto?'▾':'▸'} ${ct}</span>
+      <span style="text-align:right;font-size:13px;"><span class="muted">${grupos[ct].length} ${grupos[ct].length===1?'item':'itens'}</span>${alertas?`<br><span style="color:#b7791f;font-weight:600;">⚠️ ${alertas} acabando</span>`:''}</span>
+    </button>
+    ${aberto ? `<div style="padding:8px 0 4px;">
+      ${q ? '' : `<input id="est-bc-${sc}" placeholder="🔍 Buscar em ${ct}..." value="${escAttr(state.estBuscaCat[ct]||'')}" oninput="state.estBuscaCat['${ct}']=this.value; clearTimeout(window._estBT); window._estBT=setTimeout(()=>{ filtrarEstoque(); const e=document.getElementById('est-bc-${sc}'); if(e){ e.focus(); e.setSelectionRange(e.value.length,e.value.length); } },250);" style="margin-bottom:8px;">`}
+      ${itens.length ? '' : '<div class="card center muted">Nada encontrado.</div>'}
+    ${itens.map(m => {
       const sit = situacaoMaterial(m);
       const cor = sit==='falta' ? 'var(--danger)' : (sit==='baixo' ? '#b7791f' : 'var(--ok)');
       return `
@@ -2841,7 +2855,7 @@ function filtrarEstoque(){
           <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
         </div>
       </div>`; }).join('')}
-  `).join('') + (nOutro ? `<p class="muted" style="text-align:center;margin:16px 0;">+ ${nOutro} materiais em <a href="#" onclick="event.preventDefault();state.estoqueCat='Outro';loadTab();">Outro</a> (aparecem na busca)</p>` : '');
+    </div>` : ''}`; }).join('') + (nOutro ? `<p class="muted" style="text-align:center;margin:16px 0;">+ ${nOutro} materiais em <a href="#" onclick="event.preventDefault();state.estoqueCat='Outro';loadTab();">Outro</a> (aparecem na busca)</p>` : '');
 }
 function copiarListaCompras(){
   const comprar = (window._estoqueCache||[]).filter(m => situacaoMaterial(m) !== 'ok');
