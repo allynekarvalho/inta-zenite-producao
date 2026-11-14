@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 15:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 16:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -325,10 +325,10 @@ function prazoInfo(prazo){
 async function renderProducao(){
   const c = document.getElementById('content');
   const { data: pecas, error } = await sb.from('pecas')
-    .select('*, fichas_tecnicas!pecas_ficha_id_fkey(id, nome, revenda, ficha_fotos(url,ordem), ficha_materiais(quantidade_por_unidade, materiais(nome, unidade, cor))), pedidos(numero, prazo, urgente), costureiras(nome), faccionistas(nome)')
+    .select('*, fichas_tecnicas!pecas_ficha_id_fkey(id, nome, revenda, ficha_fotos(url,ordem), ficha_materiais(quantidade_por_unidade, materiais(nome, unidade, cor))), pedidos(numero, prazo, urgente, autorizado_em, entrega_modo, clientes(nome)), costureiras(nome), faccionistas(nome)')
     .neq('status', 'entregue').order('criado_em');
   if(error){ c.innerHTML = `<p class="error">${error.message}</p>`; return; }
-  const lista = (pecas||[]).filter(p => !(p.fichas_tecnicas && p.fichas_tecnicas.revenda));
+  const lista = (pecas||[]).filter(p => !(p.fichas_tecnicas && p.fichas_tecnicas.revenda) && p.pedidos && p.pedidos.autorizado_em);
   const sids = [...new Set(lista.map(p=>p.servico_id).filter(Boolean))], niv = {};
   const feito = {}; if(lista.length){ const { data: ls } = await sb.from('producao_lancamentos').select('id,peca_id,pessoa_tipo,pessoa_id,quantidade,pago').in('peca_id', lista.map(p=>p.id)); (ls||[]).forEach(l => (feito[l.peca_id] = feito[l.peca_id] || []).push(l)); }
   const pessoas = {}; { const [{ data: cs }, { data: fs }] = await Promise.all([sb.from('costureiras').select('id,nome'), sb.from('faccionistas').select('id,nome')]); (cs||[]).forEach(x=>pessoas[x.id]=x.nome); (fs||[]).forEach(x=>pessoas[x.id]=x.nome); }
@@ -364,7 +364,9 @@ async function renderProducao(){
     const prontas = o.pecas.reduce((s,p)=>s+(feito[p.id]||[]).reduce((a,l)=>a+(Number(l.quantidade)||0),0),0);
     return `<div class="card" style="margin-bottom:12px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-        <div><div style="font-weight:700;">📋 Ordem de produção</div>
+        <div><div style="font-size:22px;font-weight:800;line-height:1.1;">Pedido #${o.pedido.numero||''}</div>
+          <div class="muted" style="font-size:12.5px;">${escAttr((o.pedido.clientes||{}).nome||'')}</div>
+          ${entregaModoTxt(o.pedido.entrega_modo)?`<div style="font-size:13px;font-weight:600;">${entregaModoTxt(o.pedido.entrega_modo)}</div>`:''}
           <div style="font-size:13px;font-weight:600;${pz?`color:${pz.cor};`:''}">${o.pedido.urgente?'⚡ Urgente · ':''}${o.pedido.prazo?'Entrega '+fmtDate(o.pedido.prazo)+(pz&&pz.d<=3?' · '+pz.txt.replace(/^\S+ /,''):''):'Sem data de entrega'}</div>
           <div class="muted" style="font-size:12.5px;">${o.pecas.length} ${o.pecas.length===1?'peça':'peças'} · ${tot} unidades · ${prontas} prontas</div></div>
         <div style="display:flex;gap:6px;flex:none;"><button class="btn sm ghost" title="Imprimir" onclick="ordemImprimir('${pid}')">🖨️</button><button class="btn sm ghost" title="Enviar" onclick="ordemEnviar('${pid}')">📲</button></div>
@@ -372,8 +374,9 @@ async function renderProducao(){
       ${o.pecas.map(item).join('')}
     </div>`; }).join('');
   window._prodFeito = feito; window._prodNiv = niv;
-  c.innerHTML = html || '<div class="card center muted">Nada em produção. 🎉</div>';
+  c.innerHTML = html || '<div class="card center muted">Nada em produção. 🎉<br><span style="font-size:13px;">Os pedidos só entram aqui depois de ✅ Autorizar produção.</span></div>';
 }
+function entregaModoTxt(m){ return m==='envio' ? '🚚 Envio' : m==='retirar' ? '🤝 Buscar em mãos' : ''; }
 function ordemMateriais(o){
   const t = {}; o.pecas.forEach(p => ((p.fichas_tecnicas||{}).ficha_materiais||[]).filter(m=>m.materiais).forEach(m => { const k = m.materiais.nome + '|' + (m.materiais.cor||'') + '|' + (m.materiais.unidade||'');
     t[k] = (t[k]||0) + (Number(m.quantidade_por_unidade)||0)*(Number(p.quantidade)||0); }));
@@ -384,19 +387,19 @@ function ordemImprimir(pid){
   const niv = window._prodNiv||{}, feito = window._prodFeito||{}, esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const base = location.origin + location.pathname.replace(/[^/]*$/, '');
   const mats = ordemMateriais(o);
-  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ordem de produção</title><style>
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Pedido ${o.pedido.numero||''}</title><style>
     @page{size:A4;margin:10mm}body{font-family:Arial,sans-serif;color:#111;margin:0;font-size:11px}
     .top{display:flex;align-items:center;gap:10px;border-bottom:2px solid #c4a574;padding-bottom:6px;margin-bottom:8px}.top img{width:46px;height:46px;border-radius:6px}
     h1{font-family:Georgia,serif;font-size:19px;margin:0}h2{font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 3px;color:#8a6d3b}
     table{width:100%;border-collapse:collapse;font-size:10.5px}td,th{padding:3px 5px;border-bottom:1px solid #ddd;text-align:left;vertical-align:middle}th{font-size:9px;color:#666;text-transform:uppercase}
-    .f{width:38px;height:38px;object-fit:cover;border-radius:4px}.c{text-align:center}.v{text-align:right;white-space:nowrap}.box{width:16px;height:16px;border:1px solid #333;display:inline-block}
+    .pn{font-size:15px;font-weight:700}.pq{font-size:20px;font-weight:800}.f{width:44px;height:44px;object-fit:cover;border-radius:4px}.c{text-align:center}.v{text-align:right;white-space:nowrap}.box{width:16px;height:16px;border:1px solid #333;display:inline-block}
     .ass{display:flex;gap:40px;margin-top:26px}.ass div{flex:1;border-top:1px solid #111;padding-top:4px;text-align:center;font-size:10px}
   </style></head><body>
-    <div class="top"><img src="${base}logo.jpg"><div style="flex:1"><h1>Ordem de produção</h1><div>${o.pedido.prazo?'<b>Entrega: '+fmtDate(o.pedido.prazo)+'</b>':'Sem data de entrega'}${o.pedido.urgente?' · <b style="color:#b00">URGENTE</b>':''}</div></div><div>${new Date().toLocaleDateString('pt-BR')}</div></div>
+    <div class="top"><img src="${base}logo.jpg"><div style="flex:1"><div style="font-size:30px;font-weight:800;line-height:1">PEDIDO Nº ${o.pedido.numero||''}</div><div style="font-size:11px;color:#555;margin:2px 0">${esc((o.pedido.clientes||{}).nome||'')}${entregaModoTxt(o.pedido.entrega_modo)?' · <b style="color:#111">'+entregaModoTxt(o.pedido.entrega_modo)+'</b>':''}</div><div>${o.pedido.prazo?'<b>Entrega: '+fmtDate(o.pedido.prazo)+'</b>':'Sem data de entrega'}${o.pedido.urgente?' · <b style="color:#b00">URGENTE</b>':''}</div></div><div>${new Date().toLocaleDateString('pt-BR')}</div></div>
     <h2>Peças</h2>
     <table><tr><th></th><th>Peça</th><th class="c">Qtd</th><th>Nível</th><th class="c">Prontas</th><th>Feito por</th><th class="c">OK</th></tr>
       ${o.pecas.map(p => { const f = p.fichas_tecnicas||{}, u = fichaThumbUrl(f), q = (feito[p.id]||[]).reduce((s,l)=>s+(Number(l.quantidade)||0),0);
-        return `<tr><td>${u?`<img class="f" src="${esc(u)}">`:''}</td><td><b>${esc(f.nome||'')}</b>${p.com_plastico?' · com plástico':''}</td><td class="c"><b>${p.quantidade}</b></td><td>${esc((niv[p.servico_id]||'').replace(/^.* · /,''))}</td><td class="c">${q||''}</td><td style="width:22%"></td><td class="c"><span class="box"></span></td></tr>`; }).join('')}
+        return `<tr><td>${u?`<img class="f" src="${esc(u)}">`:''}</td><td><span class="pn">${esc(f.nome||'')}</span>${p.com_plastico?' · com plástico':''}</td><td class="c pq">${p.quantidade}</td><td>${esc((niv[p.servico_id]||'').replace(/^.* · /,''))}</td><td class="c">${q||''}</td><td style="width:22%"></td><td class="c"><span class="box"></span></td></tr>`; }).join('')}
     </table>
     ${mats.length?`<h2>Materiais necessários</h2><table><tr><th>Material</th><th>Cor</th><th class="v">Quantidade</th><th class="c">Separado</th></tr>
       ${mats.map(m => `<tr><td>${esc(m.n)}</td><td>${esc(m.c)}</td><td class="v"><b>${m.q.toLocaleString('pt-BR')} ${esc(m.u)}</b></td><td class="c"><span class="box"></span></td></tr>`).join('')}</table>`:''}
@@ -411,7 +414,7 @@ function ordemImprimir(pid){
 function ordemEnviar(pid){
   const o = (window._ordens||{})[pid]; if(!o) return;
   const niv = window._prodNiv||{}, mats = ordemMateriais(o);
-  const txt = `*📋 ORDEM DE PRODUÇÃO*\n${o.pedido.prazo?'*Entrega: '+fmtDate(o.pedido.prazo)+'*':'Sem data de entrega'}${o.pedido.urgente?' · ⚡ URGENTE':''}\n\n*Peças*\n` +
+  const txt = `*PEDIDO Nº ${o.pedido.numero||''}*\n${(o.pedido.clientes||{}).nome||''}${entregaModoTxt(o.pedido.entrega_modo)?'\n'+entregaModoTxt(o.pedido.entrega_modo):''}\n${o.pedido.prazo?'*Entrega: '+fmtDate(o.pedido.prazo)+'*':'Sem data de entrega'}${o.pedido.urgente?' · ⚡ URGENTE':''}\n\n*Peças*\n` +
     o.pecas.map(p => `• ${p.quantidade}× ${(p.fichas_tecnicas||{}).nome||''}${niv[p.servico_id]?' ('+niv[p.servico_id].replace(/^.* · /,'')+')':''}${p.com_plastico?' + plástico':''}`).join('\n') +
     (mats.length ? `\n\n*Materiais*\n` + mats.map(m => `• ${m.n}${m.c?' '+m.c:''}: ${m.q.toLocaleString('pt-BR')} ${m.u}`).join('\n') : '');
   if(navigator.share){ navigator.share({ text: txt }).catch(()=>{}); return; }
@@ -1410,7 +1413,7 @@ async function renderPedidos(){
     <div class="card" onclick="abrirPedido('${p.id}')" style="cursor:pointer;">
       <div style="display:flex;justify-content:space-between;">
         <strong>#${p.numero} · ${p.clientes?.nome || ''}</strong>
-        ${p.urgente ? '<span class="pill urgente">Urgente</span>' : ''}
+        <span style="white-space:nowrap;">${p.urgente ? '<span class="pill urgente">Urgente</span> ' : ''}${p.autorizado_em ? '<span class="pill" style="background:rgba(46,125,79,.15);color:var(--ok,#2e7d4f);">Em produção</span>' : '<span class="pill" style="background:rgba(183,121,31,.15);color:#b7791f;">📝 Orçamento</span>'}</span>
       </div>
       <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas${vt>0?` · ${money(vt)}`:''}</div>
       ${pz && pz.d <= 3 ? `<div style="font-size:13px;font-weight:600;color:${pz.cor};margin-top:2px;">${pz.txt}</div>` : ''}
@@ -2005,6 +2008,31 @@ async function copiarLinkPedido(id){
   if(!p) return; const l = linkPedido(p.token);
   try { await navigator.clipboard.writeText(l); alert('Link copiado!'); } catch(e){ prompt('Copie o link:', l); }
 }
+function autorizacaoHtml(p){
+  if(!p.autorizado_em) return `<div id="aut-box" style="margin-top:12px;padding:10px;border:1px dashed var(--border);border-radius:10px;">
+      <div style="font-weight:700;">📝 Orçamento</div><div class="muted" style="font-size:12.5px;margin-bottom:8px;">Ainda não vai para a produção. Quando o cliente aprovar:</div>
+      <button class="btn block" onclick="autorizarEscolher('${p.id}')">✅ Autorizar produção</button></div>`;
+  return `<div id="aut-box" style="margin-top:12px;padding:10px;border-radius:10px;background:rgba(46,125,79,.1);">
+      <div style="font-weight:700;color:var(--ok,#2e7d4f);">✅ Em produção</div><div style="font-size:13px;">${entregaModoTxt(p.entrega_modo)||'Entrega: não definida'} · desde ${new Date(p.autorizado_em).toLocaleDateString('pt-BR')}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;"><button class="btn sm ghost" onclick="autorizarEscolher('${p.id}')">Trocar envio/buscar</button><button class="btn sm ghost" onclick="desautorizar('${p.id}')">Voltar p/ orçamento</button></div></div>`;
+}
+function autorizarEscolher(id){
+  const b = document.getElementById('aut-box'); if(!b) return;
+  b.innerHTML = `<div style="font-weight:700;margin-bottom:8px;">Como vai ser a entrega?</div>
+    <div class="row" style="gap:8px;"><button class="btn" style="flex:1" onclick="autorizarProducao('${id}','envio')">🚚 Envio</button><button class="btn" style="flex:1" onclick="autorizarProducao('${id}','retirar')">🤝 Buscar em mãos</button></div>`;
+}
+async function autorizarProducao(id, modo){
+  const { data: atual } = await sb.from('pedidos').select('autorizado_em').eq('id', id).single();
+  const { error } = await sb.from('pedidos').update({ autorizado_em: (atual && atual.autorizado_em) || new Date().toISOString(), entrega_modo: modo }).eq('id', id);
+  if(error){ alert(error.message); return; }
+  abrirPedido(id); if(state.tab==='pedidos') renderPedidos();
+}
+async function desautorizar(id){
+  if(!confirm('Voltar este pedido para orçamento? Ele sai da aba Produção.')) return;
+  const { error } = await sb.from('pedidos').update({ autorizado_em: null }).eq('id', id);
+  if(error){ alert(error.message); return; }
+  abrirPedido(id); if(state.tab==='pedidos') renderPedidos();
+}
 async function abrirPedido(id){
   const { data: pedido } = await sb.from('pedidos').select('*, clientes(*)').eq('id', id).single();
   const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
@@ -2020,6 +2048,7 @@ async function abrirPedido(id){
         <div style="font-size:13px;${pz?`color:${pz.cor};font-weight:600;`:''}">${pedido.urgente?'⚡ Urgente · ':''}${pz?pz.txt:'Sem prazo'}</div></div>
       ${cli.id?`<button class="btn sm ghost" onclick="editarCliente('${cli.id}','${id}')">Editar</button>`:''}
     </div>
+    ${autorizacaoHtml(pedido)}
     <div class="row" style="gap:8px;margin-top:12px;"><button class="btn" style="flex:1" onclick="enviarPedidoCliente('${id}')">🔗 Enviar ao cliente</button><button class="btn ghost" title="Copiar link" style="flex:0 0 auto;width:auto;padding:0 16px;" onclick="copiarLinkPedido('${id}')">📋 Link</button></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;">
       <h2 style="font-size:15px;margin:0;">Peças</h2>
