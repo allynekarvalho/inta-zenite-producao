@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 17:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 17:10</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1033,9 +1033,9 @@ async function uploadParaStorage(prefixoPasta, file){
 }
 
 // ===== Lista de materiais do produto (reaproveita o cadastro de Materiais/estoque) =====
-const CATEGORIAS_MATERIAL = ['Orlado','Forro','Tecidos e sintéticos','Ferragens','Metais maçônicos','Elástico','Bordados','Outro'];
-function ehCortado(m){ return !!m && (m.categoria==='Forro' || m.categoria==='Corpos e abetas' || (m.categoria==='Tecidos e sintéticos' && m.subcategoria==='Cortados')); }
-const SUBCATS_MATERIAL = { 'Orlado': ['Fitas','Armarinhos','Cortes tecidos'], 'Tecidos e sintéticos': ['Rolos','Cortados'] };
+const CATEGORIAS_MATERIAL = ['Orlado','Cortes de forro','Tecidos e sintéticos','Cortes de peças','Ferragens','Metais maçônicos','Elástico','Bordados','Outro'];
+function ehCortado(m){ return !!m && (m.categoria==='Forro' || m.categoria==='Cortes de forro' || m.categoria==='Cortes de peças' || m.categoria==='Corpos e abetas' || (m.categoria==='Tecidos e sintéticos' && m.subcategoria==='Cortados')); }
+const SUBCATS_MATERIAL = { 'Orlado': ['Fitas','Armarinhos','Cortes tecidos'],  };
 window._pmAberto = window._pmAberto || {}; window._pmSub = window._pmSub || {};
 function subDe(m){ const subs = SUBCATS_MATERIAL[m.categoria||'Outro']; if(!subs) return ''; return subs.includes(m.subcategoria) ? m.subcategoria : (m.categoria==='Orlado' ? subs[1] : subs[0]); }
 function slugCat(c){ return c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-'); }
@@ -2844,6 +2844,58 @@ async function renderMateriais(){
 }
 function estTodas(abrir){ state.estAberto = state.estAberto||{}; CATEGORIAS_MATERIAL.forEach(ct => { state.estAberto[ct] = abrir; }); filtrarEstoque(); }
 function estToggle(ct){ state.estAberto = state.estAberto||{}; state.estAberto[ct] = !state.estAberto[ct]; filtrarEstoque(); }
+function cardMaterialHtml(m){
+      const sit = situacaoMaterial(m);
+      const cor = sit==='falta' ? 'var(--danger)' : (sit==='baixo' ? '#b7791f' : 'var(--ok)');
+      return `
+      <div class="card" style="padding:12px;">
+        <div style="display:flex;gap:10px;align-items:center;cursor:pointer;" onclick="editarMaterial('${m.id}')">
+          ${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:48px;height:48px;">` : `<div class="foto-thumb" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:var(--muted);">📦</div>`}
+          <div style="flex:1;min-width:0;">
+            <strong>${m.nome}</strong>
+            ${detalheMaterial(m)?`<div class="muted" style="font-size:12px;">${detalheMaterial(m)}</div>`:''}
+            ${m.fornecedores?.nome?`<div class="muted" style="font-size:12px;">${m.fornecedores.nome}${m.referencia?(' · ref '+m.referencia):''}</div>`:''}
+          </div>
+          <div style="text-align:right;white-space:nowrap;">
+            <div style="font-size:17px;font-weight:700;color:${cor};">${fmtEstoque(m, m.estoque_atual)}</div>
+            ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtEstoque(m, m.estoque_minimo)}</div>`:''}
+            ${ehCortado(m) ? daParaCortarHtml(m) : ''}
+            ${Number(m.preco)>0?`<div class="muted" style="font-size:11px;">${money(m.preco)} / ${m.embalagem||m.unidade}</div>`:''}
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          ${ehCortado(m) ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">✂️ Cortei</button><button class="btn ghost sm" onclick="novaCorForro('${m.id}')">+ Nova cor</button>` : `<button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>`}
+          <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
+        </div>
+      </div>`; }
+function grupoCorte(m){ const r = String(m.nome||'').match(/^\s*([^·]{1,30}?)\s*·\s*(.+)$/); return r ? { peca: r[1].trim(), modelo: r[2].trim() } : null; }
+async function addParteCorte(modelo){
+  const parte = (prompt(`Nova parte de "${modelo}" (ex.: Bolso, Bordado frente, Bordado abeta):`)||'').trim(); if(!parte) return;
+  const { error } = await sb.from('materiais').insert({ nome: parte + ' · ' + modelo, categoria: 'Cortes de peças', unidade: 'peça', estoque_atual: 0 });
+  if(error){ alert(error.message); return; }
+  loadTab();
+}
+function cortesGruposHtml(itens){
+  const gs = {}, soltos = [];
+  itens.forEach(m => { const g = grupoCorte(m); if(g){ (gs[g.modelo] = gs[g.modelo] || []).push(Object.assign({ _peca: g.peca }, m)); } else soltos.push(m); });
+  const ordemP = { corpo:1, frente:1, abeta:2 };
+  return Object.keys(gs).sort((a,b)=>a.localeCompare(b)).map(mod => {
+    const ms = gs[mod].sort((a,b)=>((ordemP[a._peca.toLowerCase()]||9)-(ordemP[b._peca.toLowerCase()]||9)) || a._peca.localeCompare(b._peca)), foto = (ms.find(x=>x.foto_url)||{}).foto_url;
+    return `<div class="card" style="padding:12px;">
+      <div style="display:flex;gap:12px;align-items:center;">
+        ${foto ? `<img src="${foto}" class="foto-thumb" style="width:64px;height:64px;" onclick="editarMaterial('${ms[0].id}')">` : `<div class="foto-thumb" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;" onclick="editarMaterial('${ms[0].id}')" title="Pôr foto">📷</div>`}
+        <strong style="font-size:16px;flex:1;">${escAttr(mod)}</strong>
+      </div>
+      ${ms.map(m => { const sit = situacaoMaterial(m), cor = sit==='falta' ? 'var(--danger)' : (sit==='baixo' ? '#b7791f' : 'var(--ok)');
+        return `<div style="display:flex;align-items:center;gap:8px;border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+          <div style="flex:1;min-width:0;"><b>${m._peca}</b>${ehCortado(m)?daParaCortarHtml(m):''}</div>
+          <div style="font-size:18px;font-weight:700;color:${cor};white-space:nowrap;">${fmtEstoque(m, m.estoque_atual)}</div>
+          <button class="btn ghost sm" style="flex:0 0 auto;width:auto;padding:0 10px;" onclick="produziComponente('${m.id}')">✂️ Cortei</button>
+          <button class="btn ghost sm" style="flex:0 0 auto;width:auto;padding:0 10px;" onclick="editarMaterial('${m.id}')">✏️</button>
+        </div>`; }).join('')}
+      <button class="btn ghost sm" style="margin-top:10px;width:100%;" onclick="addParteCorte(${escAttr(JSON.stringify(mod))})">+ Adicionar parte</button>
+    </div>`; }).join('') + soltos.map(cardMaterialHtml).join('');
+}
 function filtrarEstoque(){
   const div = document.getElementById('est-lista'); if(!div) return;
   if((state.estoqueCat||'Todas') === 'Bordados') setTimeout(() => { let d = document.getElementById('est-bord-partes'); if(!d){ d = document.createElement('div'); d.id = 'est-bord-partes'; div.after(d); } renderBordados(d); }, 0);
@@ -2878,30 +2930,7 @@ function filtrarEstoque(){
     ${aberto ? `<div style="padding:8px 0 4px;">
       ${q ? '' : `<input id="est-bc-${sc}" placeholder="🔍 Buscar em ${ct}..." value="${escAttr(state.estBuscaCat[ct]||'')}" oninput="state.estBuscaCat['${ct}']=this.value; clearTimeout(window._estBT); window._estBT=setTimeout(()=>{ filtrarEstoque(); const e=document.getElementById('est-bc-${sc}'); if(e){ e.focus(); e.setSelectionRange(e.value.length,e.value.length); } },250);" style="margin-bottom:8px;">`}
       ${itens.length ? '' : '<div class="card center muted">Nada encontrado.</div>'}
-    ${itens.map(m => {
-      const sit = situacaoMaterial(m);
-      const cor = sit==='falta' ? 'var(--danger)' : (sit==='baixo' ? '#b7791f' : 'var(--ok)');
-      return `
-      <div class="card" style="padding:12px;">
-        <div style="display:flex;gap:10px;align-items:center;cursor:pointer;" onclick="editarMaterial('${m.id}')">
-          ${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:48px;height:48px;">` : `<div class="foto-thumb" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:var(--muted);">📦</div>`}
-          <div style="flex:1;min-width:0;">
-            <strong>${m.nome}</strong>
-            ${detalheMaterial(m)?`<div class="muted" style="font-size:12px;">${detalheMaterial(m)}</div>`:''}
-            ${m.fornecedores?.nome?`<div class="muted" style="font-size:12px;">${m.fornecedores.nome}${m.referencia?(' · ref '+m.referencia):''}</div>`:''}
-          </div>
-          <div style="text-align:right;white-space:nowrap;">
-            <div style="font-size:17px;font-weight:700;color:${cor};">${fmtEstoque(m, m.estoque_atual)}</div>
-            ${Number(m.estoque_minimo)>0?`<div class="muted" style="font-size:11px;">mín. ${fmtEstoque(m, m.estoque_minimo)}</div>`:''}
-            ${ehCortado(m) ? daParaCortarHtml(m) : ''}
-            ${Number(m.preco)>0?`<div class="muted" style="font-size:11px;">${money(m.preco)} / ${m.embalagem||m.unidade}</div>`:''}
-          </div>
-        </div>
-        <div class="row" style="margin-top:10px;">
-          ${ehCortado(m) ? `<button class="btn ghost sm" onclick="produziComponente('${m.id}')">✂️ Cortei</button><button class="btn ghost sm" onclick="novaCorForro('${m.id}')">+ Nova cor</button>` : `<button class="btn ghost sm" onclick="entradaMaterial('${m.id}')">+ Entrada (comprei)</button>`}
-          <button class="btn ghost sm" onclick="editarMaterial('${m.id}')">Editar</button>
-        </div>
-      </div>`; }).join('')}
+    ${ct==='Cortes de peças' ? cortesGruposHtml(itens) : itens.map(cardMaterialHtml).join('')}
     </div>` : ''}`; }).join('') + (nOutro ? `<p class="muted" style="text-align:center;margin:16px 0;">+ ${nOutro} materiais em <a href="#" onclick="event.preventDefault();state.estoqueCat='Outro';loadTab();">Outro</a> (aparecem na busca)</p>` : '');
 }
 function copiarListaCompras(){
