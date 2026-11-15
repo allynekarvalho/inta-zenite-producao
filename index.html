@@ -281,7 +281,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 17:20</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 20:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -2982,10 +2982,21 @@ function atualizarEmbForm(p){
   const e = emb ? plural(emb,2) : un;
   document.getElementById(p+'-est-lbl').textContent = `Tenho em estoque (${e})`;
   document.getElementById(p+'-min-lbl').textContent = `Avisar com menos de (${e})`;
-  const pl=document.getElementById(p+'-preco-lbl'); if(pl) pl.textContent = `Preço pago (R$) por ${emb||(un==='peça'?'peça':un==='m'?'metro':'centímetro')}`;
+  const nomeUn = un==='peça'?'peça':un==='m'?'metro':'centímetro';
+  const porUn = precoPorUnidade(p);
+  const pl=document.getElementById(p+'-preco-lbl'); if(pl) pl.textContent = `Preço pago (R$) por ${porUn ? nomeUn : (emb||nomeUn)}`;
+  precoTotalEmb(p);
+}
+// Tecidos: preço digitado por metro; guarda por rolo (preco = valor × metros do rolo)
+function precoPorUnidade(p){ const c = document.getElementById(p+'-categoria'); return !!c && c.value==='Tecidos e sintéticos'; }
+function precoTotalEmb(p){
+  const el = document.getElementById(p+'-preco-tot'); if(!el) return;
+  const emb = document.getElementById(p+'-emb').value, q = Number(document.getElementById(p+'-qpe').value)||0;
+  const v = parseFloat(String(document.getElementById(p+'-preco').value).replace(/\./g,'').replace(',','.'))||0;
+  el.textContent = (precoPorUnidade(p) && emb && q>0 && v>0) ? `= ${money(v*q)} o ${emb} de ${q} ${document.getElementById(p+'-unidade').value}` : '';
 }
 function matCatEscolhida(p, ct){
-  document.getElementById(p+'-categoria').value = ct;
+  document.getElementById(p+'-categoria').value = ct; setTimeout(() => { try{ atualizarEmbForm(p); }catch(e){} }, 0);
   document.querySelectorAll('#'+p+'-cat-chips .chip').forEach(b => b.classList.toggle('active', b.textContent===ct));
   const sw = document.getElementById(p+'-sub-w'); if(!sw) return;
   const ss = SUBCATS_MATERIAL[ct]; sw.style.display = ss ? 'block' : 'none';
@@ -3029,7 +3040,7 @@ function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
     </select>
     <div id="${p}-qpe-w" style="display:${m.embalagem?'block':'none'};">
       <label id="${p}-qpe-lbl">Quanto vem em cada ${m.embalagem||'rolo'} (${un})</label>
-      <input id="${p}-qpe" type="number" step="0.01" inputmode="decimal" value="${m.qtd_por_embalagem||''}" placeholder="Ex: 10">
+       <input id="${p}-qpe" type="number" step="0.01" inputmode="decimal" oninput="precoTotalEmb('${p}')" value="${m.qtd_por_embalagem||''}" placeholder="Ex: 10">
     </div>
     <div class="row">
       <div><label id="${p}-est-lbl">Tenho em estoque</label><input id="${p}-estoque" type="number" step="0.01" inputmode="decimal" value="${embInfo(m) ? +((Number(m.estoque_atual)||0)/embInfo(m).q).toFixed(2) : (m.estoque_atual??0)}"></div>
@@ -3041,7 +3052,7 @@ function formMaterialHtml(p, m, fornecedores, opcoesComFoto){
       ${(fornecedores||[]).map(f=>`<option value="${f.id}" ${m.fornecedor_id===f.id?'selected':''}>${f.nome}</option>`).join('')}
     </select>
     <input id="${p}-fornecedor-nome" placeholder="Nome do novo fornecedor (opcional)" style="margin-top:6px;display:${m.fornecedor_id?'none':'block'};">
-    <label id="${p}-preco-lbl">Preço pago (R$)</label><input id="${p}-preco" type="text" inputmode="decimal" value="${m.preco!=null?String(m.preco).replace('.',','):''}" placeholder="Ex: 25,90">
+    <label id="${p}-preco-lbl">Preço pago (R$)</label><input id="${p}-preco" type="text" inputmode="decimal" oninput="precoTotalEmb('${p}')" value="${m.preco!=null?String(+((m.categoria==='Tecidos e sintéticos' && embInfo(m)) ? (Number(m.preco)/embInfo(m).q).toFixed(2) : m.preco)).replace('.',','):''}" placeholder="Ex: 25,90"><div id="${p}-preco-tot" class="muted" style="font-size:12.5px;margin-top:4px;"></div>
     <label>Referência / código no fornecedor</label><input id="${p}-ref" value="${escAttr(m.referencia)}">
     <label>Foto</label>
     <div style="margin-bottom:6px;">${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:70px;height:70px;">` : '<p class="muted">Sem foto ainda.</p>'}</div>
@@ -3080,7 +3091,8 @@ async function lerFormMaterial(p, msg){
     nome, categoria: v('categoria'), subcategoria: (SUBCATS_MATERIAL[v('categoria')] ? (v('subcategoria')||null) : null), marca: v('marca'), cor: v('cor'), numero: v('numero'), tamanho: v('tamanho'),
     unidade: document.getElementById(`${p}-unidade`).value,
     embalagem: document.getElementById(`${p}-emb`).value || null,
-    preco: (parseFloat(String(document.getElementById(`${p}-preco`).value).replace(/\./g,'').replace(',','.'))||null),
+    preco: (() => { const v = parseFloat(String(document.getElementById(`${p}-preco`).value).replace(/\./g,'').replace(',','.'))||null; const q = Number(document.getElementById(`${p}-qpe`).value)||0;
+      return (v && precoPorUnidade(p) && document.getElementById(`${p}-emb`).value && q>0) ? +(v*q).toFixed(2) : v; })(),
     qtd_por_embalagem: document.getElementById(`${p}-emb`).value ? (Number(document.getElementById(`${p}-qpe`).value) || null) : null,
     fornecedor_id: fornecedor_id || null, referencia: v('ref'),
     estoque_atual: (Number(document.getElementById(`${p}-estoque`).value) || 0) * fatorEmb(p),
