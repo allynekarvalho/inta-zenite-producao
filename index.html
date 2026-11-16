@@ -289,7 +289,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 15/11 21:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 15/11 21:15</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -355,8 +355,9 @@ async function renderProducao(){
       <div style="display:flex;gap:10px;align-items:flex-start;">
         ${fichaThumbImg(f, 52)}
         <div style="flex:1;min-width:0;">
-          <strong>${escAttr(f.nome||'Peça')}</strong>
-          <div class="muted" style="font-size:12.5px;">Qtd ${tot}${niv[p.servico_id]?` · ${escAttr(niv[p.servico_id].replace(/^.* · /,''))}`:''}${p.com_plastico?' · com plástico':''}</div>
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;"><strong style="flex:1;min-width:0;">${escAttr(f.nome||'Peça')}</strong>
+            <div style="flex:none;text-align:center;background:var(--gold);color:#1a1408;border-radius:10px;padding:2px 10px;line-height:1.05;"><div style="font-size:22px;font-weight:800;">${tot}</div><div style="font-size:9.5px;font-weight:700;letter-spacing:.5px;">${tot===1?'PEÇA':'PEÇAS'}</div></div></div>
+          <div class="muted" style="font-size:12.5px;">${niv[p.servico_id]?escAttr(niv[p.servico_id].replace(/^.* · /,'')):''}${p.com_plastico?(niv[p.servico_id]?' · ':'')+'com plástico':''}</div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><div style="flex:1;height:6px;border-radius:5px;background:var(--border);overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--ok,#2e7d4f);"></div></div><span style="font-size:12px;white-space:nowrap;"><b>${q}/${tot}</b> prontas</span></div>
           ${ls.length?`<div class="muted" style="font-size:12px;">${Object.entries(porP).map(([n,v])=>`${escAttr(n)} ${v}`).join(' · ')} <a href="#" onclick="event.preventDefault();prodVerLanc('${p.id}')">editar</a></div>`:''}
         </div>
@@ -413,10 +414,18 @@ function ordemImprimir(pid){
       ${mats.map(m => `<tr><td>${esc(m.n)}</td><td>${esc(m.c)}</td><td class="v"><b>${m.q.toLocaleString('pt-BR')} ${esc(m.u)}</b></td><td class="c"><span class="box"></span></td></tr>`).join('')}</table>`:''}
     <div class="ass"><div>Responsável</div><div>Conferido</div></div>
   </body></html>`;
+  imprimirJanela(html);
+}
+// abre a página de impressão numa janela nova (no iPhone o print dentro de iframe não funciona)
+function imprimirJanela(html){
+  const barra = `<div class="noprint" style="position:sticky;top:0;background:#fff;padding:8px 0 10px;text-align:center;border-bottom:1px solid #ddd;margin-bottom:8px;"><button onclick="window.print()" style="font-size:17px;padding:10px 26px;border-radius:10px;border:0;background:#4f74b8;color:#fff;font-weight:600;">🖨️ Imprimir</button> <button onclick="window.close()" style="font-size:15px;padding:10px 16px;border-radius:10px;border:1px solid #ccc;background:#fff;">Fechar</button></div>`;
+  const h = html.replace('</style>', '@media print{.noprint{display:none!important}}</style>').replace(/<body([^>]*)>/, '<body$1>' + barra)
+    .replace('</body>', `<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));<\/script></body>`);
+  const w = window.open('', '_blank');
+  if(w){ w.document.open(); w.document.write(h); w.document.close(); return; }
   let fr = document.getElementById('frame-impressao'); if(fr) fr.remove();
   fr = document.createElement('iframe'); fr.id = 'frame-impressao'; fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-  document.body.appendChild(fr);
-  const d = fr.contentWindow.document; d.open(); d.write(html); d.close();
+  document.body.appendChild(fr); const d = fr.contentWindow.document; d.open(); d.write(html); d.close();
   setTimeout(() => { fr.contentWindow.focus(); fr.contentWindow.print(); }, 700);
 }
 function ordemEnviar(pid){
