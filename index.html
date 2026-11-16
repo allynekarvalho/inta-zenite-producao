@@ -64,6 +64,14 @@
   label{font-size:13px;color:var(--muted);display:block;margin:10px 0 4px;}
   .row{display:flex;gap:8px;}
   .row > *{flex:1;}
+  .ped-steps{display:flex;gap:6px;margin-top:14px;}
+  .ped-st{flex:1;text-align:center;font-size:11.5px;color:var(--muted);padding-top:7px;border-top:3px solid var(--border);}
+  .ped-st.on{color:var(--ink);font-weight:700;border-color:var(--gold);} .ped-st.ok{border-color:var(--ok);}
+  .ped-sec{display:flex;justify-content:space-between;align-items:center;margin-top:20px;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);}
+  .ped-sec a{text-transform:none;letter-spacing:0;font-size:14.5px;font-weight:600;color:var(--royal);text-decoration:none;}
+  .ped-row{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;}
+  .ped-del{background:none;border:0;font-size:15px;padding:6px 2px 6px 6px;cursor:pointer;opacity:.55;flex:none;}
+  .ped-mi{cursor:pointer;padding:12px 0;}
   .pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;letter-spacing:.02em;}
   .pill.aguardando{background:#e7e2d3;color:#6b5f3f;}
   .pill.em_producao{background:#dde6f5;color:var(--royal);}
@@ -281,7 +289,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 14/11 20:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 15/11 20:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1845,17 +1853,23 @@ function colsValorHtml(qtd, unit, total, semPreco){
   </div>`;
 }
 function pecaItemHtml(p){
-  const v = vendaLinha(p), q = Number(p.quantidade)||0, unit = q ? v/q : 0;
-  return `<div class="item" onclick="closeModal(); editarPeca('${p.id}')" style="cursor:pointer;gap:10px;flex-direction:column;align-items:stretch;">
-    <div style="display:flex;gap:10px;align-items:center;min-width:0;">
-      ${fichaThumbImg(p.fichas_tecnicas, 44)}
-      <div style="min-width:0;flex:1;">
-        <div><strong>${escAttr(p.fichas_tecnicas?.nome||'Peça')}</strong></div>
-        <div class="muted" style="font-size:12.5px;">${STATUS_LABEL[p.status]}${p.com_plastico?' · com plástico':''}${Number(p.desconto_pct)&&!p.kit_grupo?` · desconto ${String(Math.round(Number(p.desconto_pct)*10)/10).replace('.',',')}%`:''}</div>
-      </div>
+  const v = vendaLinha(p), q = Number(p.quantidade)||0, unit = q ? v/q : 0, sem = p.valor_venda==null;
+  const extra = [p.com_plastico?'com plástico':'', Number(p.desconto_pct)&&!p.kit_grupo?`desc. ${String(Math.round(Number(p.desconto_pct)*10)/10).replace('.',',')}%`:''].filter(Boolean).join(' · ');
+  return `<div class="ped-row" onclick="closeModal(); editarPeca('${p.id}')">
+    ${fichaThumbImg(p.fichas_tecnicas, 44)}
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:600;line-height:1.25;">${escAttr(p.fichas_tecnicas?.nome||'Peça')} <span class="pill ${p.status}" style="font-size:10.5px;padding:2px 7px;vertical-align:1px;">${STATUS_LABEL[p.status]||''}</span></div>
+      <div class="muted" style="font-size:13px;margin-top:2px;">${p.kit_grupo || sem ? q+' un.' : q+' × '+money(unit)}${extra?' · '+extra:''}</div>
     </div>
-    ${p.kit_grupo ? `<div class="muted" style="font-size:12.5px;">Quantidade: <b>${p.quantidade}</b></div>` : colsValorHtml(p.quantidade, unit, v, p.valor_venda==null)}
+    ${p.kit_grupo ? '' : `<div style="text-align:right;white-space:nowrap;font-weight:600;${sem?'color:var(--danger);font-size:13px;font-weight:500;':''}">${sem?'pôr preço':money(v)}</div>`}
+    ${p.kit_grupo ? '' : `<button class="ped-del" title="Excluir" onclick="event.stopPropagation(); excluirPecaPedido('${p.id}','${p.pedido_id}')">🗑️</button>`}
   </div>`; }
+async function excluirPecaPedido(id, pedidoId){
+  if(!confirm('Excluir esta peça do pedido? O material usado volta para o estoque.')) return;
+  const { error } = await sb.from('pecas').delete().eq('id', id);
+  if(error){ alert(error.message); return; }
+  abrirPedido(pedidoId); if(state.tab==='pedidos') renderPedidos();
+}
 
 function vendaLinha(p){ return (Number(p.valor_venda)||0)*(Number(p.quantidade)||0)*(1-(Number(p.desconto_pct)||0)/100); }
 function pedidoPecasHtml(pecas, pedidoId){
@@ -1865,12 +1879,11 @@ function pedidoPecasHtml(pecas, pedidoId){
   const nomeKit = window._kitNome || {};
   return Object.values(grupos).map(g => { const k = g[0], tot = g.reduce((s,p)=>s+vendaLinha(p),0);
     return `<details class="card" style="margin:8px 0;padding:10px 12px;"><summary style="cursor:pointer;list-style:none;display:block;">
-      <div style="display:flex;justify-content:space-between;gap:8px;"><strong>📦 ${escAttr(nomeKit[k.kit_id]||'Conjunto')}</strong><span class="muted" style="font-size:12px;">ver peças ›</span></div>
-      ${colsValorHtml(k.kit_qtd||1, tot/(k.kit_qtd||1), tot, false)}</summary>
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><div><strong>📦 ${escAttr(nomeKit[k.kit_id]||'Conjunto')}</strong><div class="muted" style="font-size:13px;">${k.kit_qtd||1} × ${money(tot/(k.kit_qtd||1))} · ver peças ›</div></div><strong style="white-space:nowrap;">${money(tot)}</strong></div></summary>
       ${Number(k.desconto_pct)?`<div class="muted" style="font-size:12px;margin:2px 0;">desconto ${String(Math.round(Number(k.desconto_pct)*10)/10).replace('.',',')}%</div>`:''}
       ${g.map(pecaItemHtml).join('')}
       <div class="row" style="gap:6px;margin-top:6px;"><button class="btn sm" onclick="valorKitPedido('${k.kit_grupo}','${pedidoId}')">💲 Valor do conjunto</button><button class="btn sm" onclick="descontoKitPedido('${k.kit_grupo}','${pedidoId}')">% Desconto</button>
-      <button class="btn sm ghost" style="color:var(--danger);" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">Tirar este conjunto do pedido</button></div></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
+      <button class="btn sm ghost" style="color:var(--danger);" onclick="removerKitPedido('${k.kit_grupo}','${pedidoId}')">🗑️ Excluir conjunto</button></div></details>`; }).join('') + avulsas.map(pecaItemHtml).join('');
 }
 async function descontoKitPedido(grupo, pedidoId){
   const { data: ps } = await sb.from('pecas').select('id,desconto_pct').eq('kit_grupo', grupo);
@@ -1933,6 +1946,8 @@ async function excluirPagPedido(id, pedidoId){
   if(!confirm('Excluir este pagamento?')) return;
   await sb.from('pedido_pagamentos').delete().eq('id', id); abrirPedido(pedidoId);
 }
+function pedMenu(abrir){ const m = document.getElementById('ped-menu'); if(!m) return; m.style.display = (abrir===false || (abrir===undefined && m.style.display!=='none')) ? 'none' : 'block'; }
+function pagNovo(id){ pedMenu(false); const x = window._pedPag || { falta:0, forma:'' }; registrarPagPedido(id, x.falta, x.forma); const a = document.getElementById('pp-area'); if(a) setTimeout(() => a.scrollIntoView({ behavior:'smooth', block:'center' }), 50); }
 async function pedidoValoresRender(pedido, pecas){
   const div = document.getElementById('pedido-valores'); if(!div) return;
   const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), frete = Number(pedido.frete)||0, liq = pecas.reduce((s,p)=>s+vendaLinha(p),0) + frete;
@@ -1943,12 +1958,13 @@ async function pedidoValoresRender(pedido, pecas){
   div.innerHTML = `
     ${bruto+frete-liq>0.009 ? L('<span class="muted">Desconto</span>', `<span class="muted">− ${money(bruto+frete-liq)}</span>`) : ''}
     ${frete ? L('<span class="muted">Frete</span>', `<span class="muted">${money(frete)}</span>`) : ''}
-    ${L('Total do pedido', `<b>${money(liq)}</b>`)}
+    ${L('<span class="muted">Peças</span>', `<b>${money(liq)}</b>`)}
     ${(pg||[]).map(x=>L(`<span class="muted" style="font-size:13px;">Pago ${fmtDate(x.data)}${x.forma?' · '+escAttr(x.forma):''}${x.obs?' · '+escAttr(x.obs):''} <a href="#" style="color:var(--danger);" onclick="event.preventDefault();excluirPagPedido('${x.id}','${pedido.id}')">✕</a></span>`, `<span class="muted">− ${money(x.valor)}</span>`)).join('')}
-    ${liq>0 ? L(falta>0.009?'<b>Falta receber</b>':'<b>✅ Pago</b>', `<b style="font-size:19px;${falta>0.009?'color:var(--danger);':'color:var(--ok);'}">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:6px;padding-top:8px;') : ''}
+    ${liq>0 ? L(falta>0.009?'<b>Falta</b>':'<b>✅ Pago</b>', `<b style="font-size:19px;${falta>0.009?'color:var(--danger);':'color:var(--ok);'}">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:6px;padding-top:8px;') : ''}
     ${semPreco?`<div style="font-size:12px;color:var(--danger);margin-top:4px;">${semPreco} peça(s) sem preço — toque na peça para colocar</div>`:''}
     ${pedido.pag_escolha && falta>0.009?`<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg);font-size:14px;">${pedido.pag_escolha==='Pix'?'💠':pedido.pag_escolha==='Cartão'?'💳':'🧾'} Cliente quer pagar com <b>${escAttr(pedido.pag_escolha)}</b>${pedido.pag_escolha!=='Pix'?' — mande o '+(pedido.pag_escolha==='Cartão'?'link do cartão':'boleto')+' pelo WhatsApp':''}</div>`:''}
-    <div id="pp-area"><button class="btn block" style="margin-top:10px;" onclick="registrarPagPedido('${pedido.id}', ${falta.toFixed(2)}, '${escAttr(pedido.forma_pagamento||'')}')">+ Registrar pagamento</button></div>`;
+    <div id="pp-area"></div>`;
+  window._pedPag = { falta, forma: pedido.forma_pagamento||'' };
   custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0) + frete; const el = document.getElementById('pedido-lucro');
     if(el) el.innerHTML = L('Custo estimado', money(custo)) + L('<b>Lucro</b>', `<b style="color:${liq-custo>=0?'var(--ok)':'var(--danger)'};">${money(liq-custo)}</b>`) + (liq>0?`<div class="muted" style="font-size:12px;">Margem ${Math.round((liq-custo)/liq*100)}%</div>`:''); });
 }
@@ -1970,6 +1986,7 @@ function entregaHtml(p){
 async function entregaForm(id, tipo){
   const { data: p } = await sb.from('pedidos').select('*').eq('id', id).single();
   const div = document.getElementById('pedido-entrega'); if(!div || !p) return;
+  div.style.display = ''; setTimeout(() => div.scrollIntoView({ behavior:'smooth', block:'center' }), 50);
   const env = tipo === 'enviado';
   div.innerHTML = `<strong>${env?'🚚 Enviar pedido':'🤝 Entregue em mãos'}</strong>
     ${env?`<label>Como vai</label><select id="en-transp">${TRANSPORTADORAS.map(t=>`<option ${t===p.transportadora?'selected':''}>${t}</option>`).join('')}</select>
@@ -2026,7 +2043,7 @@ function autorizacaoHtml(p){
       <div style="display:flex;gap:6px;margin-top:8px;"><button class="btn sm ghost" onclick="autorizarEscolher('${p.id}')">Trocar envio/buscar</button><button class="btn sm ghost" onclick="desautorizar('${p.id}')">Voltar p/ orçamento</button></div></div>`;
 }
 function autorizarEscolher(id){
-  const b = document.getElementById('aut-box'); if(!b) return;
+  const b = document.getElementById('aut-box'); if(!b) return; b.style.display='block';
   b.innerHTML = `<div style="font-weight:700;margin-bottom:8px;">Como vai ser a entrega?</div>
     <div class="row" style="gap:8px;"><button class="btn" style="flex:1" onclick="autorizarProducao('${id}','envio')">🚚 Envio</button><button class="btn" style="flex:1" onclick="autorizarProducao('${id}','retirar')">🤝 Buscar em mãos</button></div>`;
 }
@@ -2050,28 +2067,37 @@ async function abrirPedido(id){
   { const sids = [...new Set((pecas||[]).map(p=>p.servico_id).filter(Boolean))]; window._nivelNome = {};
     if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => window._nivelNome[x.id] = x.nome); } }
   const pz = prazoInfo(pedido.prazo), cli = pedido.clientes || {};
+  const aut = !!pedido.autorizado_em, ent = !!pedido.entrega_tipo;
+  const todasProntas = (pecas||[]).length && (pecas||[]).every(p => p.status==='pronto' || p.status==='entregue');
+  const st = (t, c) => `<div class="ped-st ${c}">${t}</div>`;
   showModal(`
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-top:-4px;">
-      <div><div style="font-size:17px;font-weight:600;">${escAttr(cli.nome||'Sem cliente')}</div>
-        <div style="font-size:13px;${pz?`color:${pz.cor};font-weight:600;`:''}">${pedido.urgente?'⚡ Urgente · ':''}${pz?pz.txt:'Sem prazo'}</div></div>
-      ${cli.id?`<button class="btn sm ghost" onclick="editarCliente('${cli.id}','${id}')">Editar</button>`:''}
+    <div style="margin-top:-6px;font-size:14px;" class="muted"><span style="color:var(--ink);font-weight:600;">${escAttr(cli.nome||'Sem cliente')}</span> · <span style="${pz?`color:${pz.cor};font-weight:600;`:''}">${pedido.urgente?'⚡ Urgente · ':''}${pz?pz.txt:'sem prazo'}</span>${aut&&entregaModoTxt(pedido.entrega_modo)?' · '+entregaModoTxt(pedido.entrega_modo):''}</div>
+    <div class="ped-steps">${st(aut?'Orçamento ✓':'Orçamento', aut?'ok':'on')}${st(ent?'Produção ✓':'Produção', ent?'ok':(aut?'on':''))}${st(ent?'Entregue ✓':'Entrega', ent?'ok':'')}</div>
+    <div id="aut-box" class="row" style="gap:8px;margin-top:14px;">
+      ${!aut ? `<button class="btn" style="flex:1" onclick="autorizarEscolher('${id}')">✅ Autorizar produção</button>`
+        : (!ent && todasProntas) ? `<button class="btn" style="flex:1" onclick="pedMenu(false); entregaForm('${id}','enviado')">🚚 Enviar</button><button class="btn" style="flex:1" onclick="pedMenu(false); entregaForm('${id}','retirada')">🤝 Em mãos</button>`
+        : `<button class="btn" style="flex:1" onclick="pagNovo('${id}')">+ Pagamento</button>`}
+      <button class="btn ghost" style="flex:0 0 auto;width:auto;padding:0 14px;" onclick="enviarPedidoCliente('${id}')">🔗 Enviar</button>
+      <button class="btn ghost" style="flex:0 0 auto;width:auto;padding:0 14px;" onclick="pedMenu()">⋯</button>
     </div>
-    ${autorizacaoHtml(pedido)}
-    <div class="row" style="gap:8px;margin-top:12px;"><button class="btn" style="flex:1" onclick="enviarPedidoCliente('${id}')">🔗 Enviar ao cliente</button><button class="btn ghost" title="Copiar link" style="flex:0 0 auto;width:auto;padding:0 16px;" onclick="copiarLinkPedido('${id}')">📋 Link</button></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;">
-      <h2 style="font-size:15px;margin:0;">Peças</h2>
-      <button class="btn sm" onclick="adicionarItensPedido('${id}')">+ Adicionar</button>
+    <div id="ped-menu" class="card" style="display:none;margin-top:8px;padding:6px 12px;">
+      <div class="item ped-mi" onclick="copiarLinkPedido('${id}')">📋 Copiar link do pedido</div>
+      ${cli.id?`<div class="item ped-mi" onclick="editarCliente('${cli.id}','${id}')">✏️ Editar cliente</div>`:''}
+      ${aut && !ent ? `<div class="item ped-mi" onclick="pedMenu(false); entregaForm('${id}','enviado')">🚚 Marcar como enviado</div><div class="item ped-mi" onclick="pedMenu(false); entregaForm('${id}','retirada')">🤝 Marcar como entregue em mãos</div>` : ''}
+      ${(aut && !ent && !todasProntas) ? '' : `<div class="item ped-mi" onclick="pagNovo('${id}')">💳 Registrar pagamento${aut?'':' (sinal)'}</div>`}
+      ${aut ? `<div class="item ped-mi" onclick="pedMenu(false); autorizarEscolher('${id}')">🔁 Trocar envio / buscar em mãos</div><div class="item ped-mi" onclick="desautorizar('${id}')">↩️ Voltar para orçamento</div>` : ''}
+      <div class="item ped-mi" style="color:var(--danger);" onclick="excluirPedido('${id}', ${pedido.numero})">🗑️ Excluir pedido</div>
     </div>
-    <div id="pedido-pecas" style="margin-top:4px;">${pedidoPecasHtml(pecas||[], id)}</div>
+    <div class="ped-sec"><span>Peças · ${(pecas||[]).reduce((s,p)=>s+(Number(p.quantidade)||0),0)}</span><a href="#" onclick="event.preventDefault(); adicionarItensPedido('${id}')">+ Adicionar</a></div>
+    <div id="pedido-pecas">${pedidoPecasHtml(pecas||[], id)}</div>
     <div id="pedido-valores" class="card" style="margin-top:14px;"></div>
-    <div id="pedido-entrega" class="card" style="margin-top:10px;">${entregaHtml(pedido)}</div>
+    <div id="pedido-entrega" class="card" style="margin-top:10px;${ent?'':'display:none;'}">${ent?entregaHtml(pedido):''}</div>
     <details class="card" style="margin-top:10px;padding:10px 14px;"><summary style="cursor:pointer;font-weight:600;list-style:none;">📊 Custos e lucro <span class="muted" style="font-weight:400;font-size:12px;">· só você vê ›</span></summary>
       <div id="pedido-lucro" style="font-size:14px;margin-top:8px;">Calculando...</div>
       <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13.5px;">🪡 Bordados</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>
       <details style="margin-top:4px;"><summary style="cursor:pointer;font-size:13.5px;">🧵 Materiais</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
     </details>
-    <button class="btn block ghost" style="margin-top:18px;color:var(--danger);" onclick="excluirPedido('${id}', ${pedido.numero})">🗑️ Excluir pedido</button>
   `);
   materiaisDoPedido(pecas||[]);
   bordadosDoPedido(pecas||[]);
