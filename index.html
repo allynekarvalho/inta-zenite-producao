@@ -79,6 +79,7 @@
   .pill.entregue{background:#e2dccd;color:var(--muted);}
   .pill.urgente{background:#f3d9d9;color:var(--danger);}
   .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+  body.teclado .navbottom{display:none;}
   .navbottom{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);display:flex;padding:6px env(safe-area-inset-left,0) calc(6px + env(safe-area-inset-bottom,0)) env(safe-area-inset-right,0);z-index:200;}
   .navbottom button{flex:1;background:none;border:none;color:var(--muted);font-size:11px;font-family:inherit;padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;}
   .navbottom button.active{color:var(--royal);font-weight:700;}
@@ -289,7 +290,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 15/11 21:15</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 16/11 14:35</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -3530,6 +3531,25 @@ function closeModal(){
   const m = document.getElementById('modal-bg');
   if(m) m.remove();
 }
+</script>
+<script>
+// iPhone: com o teclado aberto, a janela (modal) acompanha a área visível e o campo fica no meio da tela
+(function(){
+  const vv = window.visualViewport;
+  function ajustar(){
+    const bg = document.querySelector('.modal-bg'), teclado = !!vv && (window.innerHeight - vv.height > 120);
+    document.body.classList.toggle('teclado', teclado);
+    if(!bg) return;
+    if(teclado){ bg.style.top = vv.offsetTop + 'px'; bg.style.height = vv.height + 'px'; bg.style.bottom = 'auto'; }
+    else { bg.style.top = ''; bg.style.height = ''; bg.style.bottom = ''; }
+  }
+  if(vv){ vv.addEventListener('resize', ajustar); vv.addEventListener('scroll', ajustar); }
+  document.addEventListener('focusin', e => {
+    const t = e.target; if(!t || !t.closest || !t.closest('.modal') || !/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    setTimeout(() => { ajustar(); try{ t.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(_){} }, 350);
+  });
+  document.addEventListener('focusout', () => setTimeout(ajustar, 300));
+})();
 </script>
 </body>
 </html>
