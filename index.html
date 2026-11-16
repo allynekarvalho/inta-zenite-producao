@@ -289,7 +289,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 15/11 20:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 15/11 21:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -349,7 +349,7 @@ async function renderProducao(){
   window._ordens = {};
   const item = p => {
     const f = p.fichas_tecnicas || {}, ls = feito[p.id]||[], q = ls.reduce((s,l)=>s+(Number(l.quantidade)||0),0), tot = Number(p.quantidade)||0, pct = tot ? Math.min(100, Math.round(q/tot*100)) : 0;
-    const porP = {}; ls.forEach(l => { const n = pessoas[l.pessoa_id]||'?'; porP[n] = (porP[n]||0) + (Number(l.quantidade)||0); });
+    const porP = {}; ls.forEach(l => { const n = l.pessoa_id ? (pessoas[l.pessoa_id]||'?') : 'Sem nome'; porP[n] = (porP[n]||0) + (Number(l.quantidade)||0); });
     const mats = (f.ficha_materiais||[]).filter(m=>m.materiais).map(m => `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>${escAttr(m.materiais.nome)}${m.materiais.cor?` <span class="muted">${escAttr(m.materiais.cor)}</span>`:''}</span><b style="white-space:nowrap;">${fmtQ((Number(m.quantidade_por_unidade)||0)*tot, m.materiais.unidade)}</b></div>`).join('');
     return `<div style="border-top:1px solid var(--border);padding:10px 0;">
       <div style="display:flex;gap:10px;align-items:flex-start;">
@@ -437,7 +437,7 @@ async function prodMarcarProntas(pecaId){
   const feitas = (ls||[]).reduce((s,l)=>s+(Number(l.quantidade)||0),0), falta = Math.max(0, (Number(p.quantidade)||0) - feitas);
   showModal(`<h2>Marcar prontas <button class="close" onclick="closeModal()">&times;</button></h2>
     <p class="muted">${escAttr(p.fichas_tecnicas?.nome||'Peça')} · Pedido #${p.pedidos?.numero||''} · prontas ${feitas} de ${p.quantidade}</p>
-    <label>Quem fez</label><select id="mp-quem" onchange="prodValorSugerido('${pecaId}')"><option value="">Escolha...</option>
+    <label>Quem fez</label><select id="mp-quem" onchange="prodValorSugerido('${pecaId}')"><option value="">— Não informar —</option>
       ${(cs||[]).map(x=>`<option value="costureiras|${x.id}">${escAttr(x.nome)}</option>`).join('')}
       ${(fs||[]).length?`<optgroup label="Faccionistas">${fs.map(x=>`<option value="faccionistas|${x.id}">${escAttr(x.nome)}</option>`).join('')}</optgroup>`:''}</select>
     <div class="row" style="gap:8px;">
@@ -445,7 +445,7 @@ async function prodMarcarProntas(pecaId){
       <div style="flex:1"><label>Valor por peça (R$)</label><input id="mp-valor" inputmode="decimal" placeholder="0,00"></div>
     </div>
     <label>Data</label><input id="mp-data" type="date" value="${todayISO()}">
-    <p class="muted" style="font-size:12px;">Já entra na produção da costureira para pagamento.</p>
+    <p class="muted" style="font-size:12px;">Se escolher quem fez, já entra na produção dela para pagamento.</p>
     <button class="btn block gold" style="margin-top:10px;" onclick="prodSalvarProntas('${pecaId}')">Salvar</button><p id="mp-msg" class="error"></p>`);
 }
 async function prodValorSugerido(pecaId){
@@ -459,9 +459,8 @@ async function prodValorSugerido(pecaId){
 async function prodSalvarProntas(pecaId){
   const p = (window._prodPecas||{})[pecaId], msg = document.getElementById('mp-msg'), v = document.getElementById('mp-quem').value;
   const qtd = Number(document.getElementById('mp-qtd').value)||0, valor_unit = numBR(document.getElementById('mp-valor').value)||0;
-  if(!v){ msg.textContent = 'Escolha quem fez.'; return; }
   if(!qtd){ msg.textContent = 'Coloque a quantidade.'; return; }
-  const [tipo, id] = v.split('|'), serv = p.servico_id || p.ficha_id;
+  const [tipo, id] = v ? v.split('|') : [null, null], serv = p.servico_id || p.ficha_id;
   const { data: sv } = await sb.from('fichas_tecnicas').select('nome').eq('id', serv).maybeSingle();
   const nomeP = p.fichas_tecnicas?.nome || '', produto = sv && sv.nome && serv !== p.ficha_id ? `${sv.nome} (${nomeP})` : nomeP;
   const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: tipo, pessoa_id: id, ficha_id: serv, produto, quantidade: qtd, valor_unit, data: document.getElementById('mp-data').value || todayISO(), peca_id: pecaId });
@@ -479,7 +478,7 @@ async function prodVerLanc(pecaId){
   if(ids.length){ const [{ data: cs }, { data: fs }] = await Promise.all([sb.from('costureiras').select('id,nome').in('id', ids), sb.from('faccionistas').select('id,nome').in('id', ids)]); (cs||[]).concat(fs||[]).forEach(x=>nomes[x.id]=x.nome); }
   showModal(`<h2>Quem fez <button class="close" onclick="closeModal()">&times;</button></h2>
     <p class="muted">${escAttr(p?.fichas_tecnicas?.nome||'')} · Pedido #${p?.pedidos?.numero||''}</p>
-    ${(ls||[]).map(l=>`<div class="item" style="gap:8px;"><span style="flex:1">${escAttr(nomes[l.pessoa_id]||'?')} · <b>${l.quantidade}</b> peças · ${fmtDate(l.data)}${l.pago?' · <span style="color:var(--ok)">pago</span>':''}</span>
+    ${(ls||[]).map(l=>`<div class="item" style="gap:8px;"><span style="flex:1">${escAttr(l.pessoa_id ? (nomes[l.pessoa_id]||'?') : 'Sem nome')} · <b>${l.quantidade}</b> peças · ${fmtDate(l.data)}${l.pago?' · <span style="color:var(--ok)">pago</span>':''}</span>
       ${l.pago?'':`<button class="btn sm ghost" style="color:var(--danger);" onclick="prodExcluirLanc('${l.id}','${pecaId}')">Excluir</button>`}</div>`).join('') || '<p class="muted">Nada lançado.</p>'}
     <button class="btn block" style="margin-top:10px;" onclick="prodMarcarProntas('${pecaId}')">+ Marcar mais prontas</button>`);
 }
