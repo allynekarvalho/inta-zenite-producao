@@ -80,6 +80,7 @@
   .pill.urgente{background:#f3d9d9;color:var(--danger);}
   .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
   body.teclado .navbottom{display:none;}
+  button,a,input,select,label{touch-action:manipulation;}
   .navbottom{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);display:flex;padding:6px env(safe-area-inset-left,0) calc(6px + env(safe-area-inset-bottom,0)) env(safe-area-inset-right,0);z-index:200;}
   .navbottom button{flex:1;background:none;border:none;color:var(--muted);font-size:11px;font-family:inherit;padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;}
   .navbottom button.active{color:var(--royal);font-weight:700;}
@@ -164,7 +165,7 @@ function fichaThumbImg(f, size){
   size = size || 44;
   const url = fichaThumbUrl(f);
   if(!url) return `<div class="foto-thumb" style="width:${size}px;height:${size}px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);text-align:center;">sem foto</div>`;
-  return `<img src="${url}" class="foto-thumb" style="width:${size}px;height:${size}px;flex-shrink:0;">`;
+  return `<img src="${url}" loading="lazy" decoding="async" class="foto-thumb" style="width:${size}px;height:${size}px;flex-shrink:0;">`;
 }
 // reduz a foto antes de enviar (mais rápido e ocupa menos espaço)
 async function comprimirFoto(file){
@@ -290,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 16/11 14:50</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 17/11 09:20</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1466,8 +1467,8 @@ function selPrecoConj(k){ const soma = (k.kit_itens||[]).reduce((s,i)=>s+(Number
   return k.preco_fixo!=null ? Number(k.preco_fixo) : soma*(1-(Number(k.desconto_pct)||0)/100); }
 function selHtml(){ return `
   <div class="segmented" style="margin-top:14px;"><button id="sel-ab-pecas" class="active" onclick="selAba('pecas')">Peças</button><button id="sel-ab-conj" onclick="selAba('conj')">📦 Conjuntos</button></div>
-  <input id="sel-busca" placeholder="🔍 Buscar..." autocomplete="off" oninput="window._sel.busca=this.value; selRender()" style="margin-top:8px;">
-  <div id="sel-lista" style="max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;margin-top:8px;padding:0 10px;"></div>`; }
+  <input id="sel-busca" placeholder="🔍 Buscar..." autocomplete="off" oninput="window._sel.busca=this.value; clearTimeout(window._selT); window._selT=setTimeout(selRender,180)" style="margin-top:8px;">
+  <div id="sel-lista" style="border:1px solid var(--border);border-radius:12px;margin-top:8px;padding:0 10px;"></div>`; }
 function selAba(a){ window._sel.aba = a; document.getElementById('sel-ab-pecas').classList.toggle('active', a==='pecas'); document.getElementById('sel-ab-conj').classList.toggle('active', a==='conj'); selRender(); }
 function selRender(){
   const S = window._sel, el = document.getElementById('sel-lista'); if(!el) return;
@@ -1476,7 +1477,7 @@ function selRender(){
       <div style="display:flex;gap:8px;align-items:center;min-width:0;flex:1;">${img}<div style="min-width:0;"><div style="font-size:14px;">${escAttr(nome)}</div><div class="muted" style="font-size:12px;">${preco>0?money(preco):'sem preço'}</div></div></div>
       <div style="display:flex;align-items:center;gap:4px;flex:none;">
         <button class="btn sm ghost" style="width:34px;padding:6px 0;" onclick="selQtd('${tipo}','${id}',-1)">−</button>
-        <input id="q-${tipo}-${id}" type="number" min="0" inputmode="numeric" value="${q||''}" placeholder="0" onchange="selSet('${tipo}','${id}',this.value)" style="width:52px;text-align:center;padding:6px 2px;margin:0;${q?'border-color:var(--gold);font-weight:700;':''}">
+        <input id="q-${tipo}-${id}" type="text" inputmode="numeric" pattern="[0-9]*" value="${q||''}" placeholder="0" onchange="selSet('${tipo}','${id}',this.value)" style="width:52px;text-align:center;padding:6px 2px;margin:0;${q?'border-color:var(--gold);font-weight:700;':''}">
         <button class="btn sm" style="width:34px;padding:6px 0;" onclick="selQtd('${tipo}','${id}',1)">+</button>
       </div></div>`; };
   el.innerHTML = (S.aba==='pecas'
