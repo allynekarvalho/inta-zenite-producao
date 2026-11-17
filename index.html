@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 17/11 09:20</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 17/11 09:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1473,16 +1473,16 @@ function selAba(a){ window._sel.aba = a; document.getElementById('sel-ab-pecas')
 function selRender(){
   const S = window._sel, el = document.getElementById('sel-lista'); if(!el) return;
   const sem = t => (t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(), ws = sem(S.busca).split(/\s+/).filter(Boolean), ok = n => ws.every(w => sem(n).includes(w));
-  const linha = (id, nome, preco, img, tipo) => { const q = (tipo==='c'?S.conj:S.itens)[id]||0; return `<div class="item" style="gap:8px;padding:8px 0;">
-      <div style="display:flex;gap:8px;align-items:center;min-width:0;flex:1;">${img}<div style="min-width:0;"><div style="font-size:14px;">${escAttr(nome)}</div><div class="muted" style="font-size:12px;">${preco>0?money(preco):'sem preço'}</div></div></div>
-      <div style="display:flex;align-items:center;gap:4px;flex:none;">
-        <button class="btn sm ghost" style="width:34px;padding:6px 0;" onclick="selQtd('${tipo}','${id}',-1)">−</button>
-        <input id="q-${tipo}-${id}" type="text" inputmode="numeric" pattern="[0-9]*" value="${q||''}" placeholder="0" onchange="selSet('${tipo}','${id}',this.value)" style="width:52px;text-align:center;padding:6px 2px;margin:0;${q?'border-color:var(--gold);font-weight:700;':''}">
-        <button class="btn sm" style="width:34px;padding:6px 0;" onclick="selQtd('${tipo}','${id}',1)">+</button>
+  const linha = (id, nome, preco, img, tipo) => { const q = (tipo==='c'?S.conj:S.itens)[id]||0; return `<div style="padding:12px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;gap:12px;align-items:center;">${img}<div style="min-width:0;flex:1;"><div style="font-size:16.5px;font-weight:600;line-height:1.25;">${escAttr(nome)}</div><div class="muted" style="font-size:14px;margin-top:2px;">${preco>0?money(preco):'sem preço'}</div></div></div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px;">
+        <button class="btn ghost" style="width:52px;height:46px;padding:0;font-size:22px;" onclick="selQtd('${tipo}','${id}',-1)">−</button>
+        <input id="q-${tipo}-${id}" type="text" inputmode="numeric" pattern="[0-9]*" value="${q||''}" placeholder="0" onchange="selSet('${tipo}','${id}',this.value)" style="width:64px;height:46px;text-align:center;font-size:18px;padding:0;margin:0;${q?'border-color:var(--gold);font-weight:700;':''}">
+        <button class="btn" style="width:52px;height:46px;padding:0;font-size:22px;" onclick="selQtd('${tipo}','${id}',1)">+</button>
       </div></div>`; };
   el.innerHTML = (S.aba==='pecas'
-    ? S.fichas.filter(f=>ok(f.nome)).map(f => linha(f.id, (f.revenda?'💎 ':'')+f.nome, Number(f.preco_venda)||0, fichaThumbImg(f, 38), 'p'))
-    : S.kits.filter(k=>ok(k.nome)).map(k => linha(k.id, k.nome, selPrecoConj(k), '<div style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:22px;">📦</div>', 'c'))
+    ? S.fichas.filter(f=>ok(f.nome)).map(f => linha(f.id, (f.revenda?'💎 ':'')+f.nome, Number(f.preco_venda)||0, fichaThumbImg(f, 72), 'p'))
+    : S.kits.filter(k=>ok(k.nome)).map(k => linha(k.id, k.nome, selPrecoConj(k), '<div style="width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:36px;flex:none;">📦</div>', 'c'))
   ).join('') || '<p class="muted" style="padding:12px 0;">Nada encontrado.</p>';
 }
 function selSet(tipo, id, v){ const S = window._sel, m = tipo==='c' ? S.conj : S.itens; const n = Math.max(0, Math.floor(Number(v)||0)); if(n) m[id] = n; else delete m[id];
