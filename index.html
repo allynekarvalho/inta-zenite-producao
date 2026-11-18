@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 08:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 08:45</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -3298,14 +3298,15 @@ async function selecionarFichaCalc(fichaId, nome){
     <div id="calc-totais" style="margin-top:10px;"></div>
     <div class="card" style="margin-top:12px;">
       <strong style="font-size:13px;">Para a folha da costureira</strong>
-      <label>Costureira</label><select id="calc-cost" onchange="calcValorCost('${fichaId}')"><option value="">—</option></select>
+      <label>Costureira</label><select id="calc-cost" onchange="calcValorCost('${fichaId}'); calcBtnNome();"><option value="">—</option></select>
       <div class="row" style="gap:8px;">
         <div style="flex:1"><label>Data de produção</label><input id="calc-dprod" type="date" value="${todayISO()}"></div>
         <div style="flex:1"><label>Data de entrega</label><input id="calc-dent" type="date"></div>
       </div>
       <label>Valor por peça (R$) <span id="calc-nivel-nome" class="muted" style="font-size:12px;"></span></label><input id="calc-valor" inputmode="decimal" placeholder="escolha a costureira"><div id="calc-nivel" class="muted" style="font-size:12px;margin-top:2px;"></div>
-      <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="calc-lancar" checked> Lançar na Produção da costureira ao imprimir</label>
-      <div id="calc-lancado" class="muted" style="font-size:12px;margin-top:4px;"></div>
+      <button id="calc-autorizar" class="btn block gold" style="margin-top:12px;" onclick="calcAutorizar('${fichaId}','${nome.replace(/'/g,"\'")}')">✅ Autorizar e lançar na lista da costureira</button>
+      <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="calc-lancar" checked> Lançar também ao imprimir (se ainda não lançou)</label>
+      <div id="calc-lancado" class="muted" style="font-size:13px;margin-top:6px;"></div>
     </div>
     <button class="btn block" style="margin-top:10px;" onclick="imprimirCalculo('${nome.replace(/'/g,"\\'")}')">🖨️ Imprimir resumo</button>
     <button class="btn ghost block" style="margin-top:10px;" onclick="copiarCalculo('${nome.replace(/'/g,"\\'")}')">Copiar lista (WhatsApp)</button>
@@ -3336,6 +3337,18 @@ async function calcValorCost(fichaId){
   }
   inp.value = v ? String(v).replace('.',',') : '';
   const nl = document.getElementById('calc-nivel'); if(nl) nl.textContent = v ? '' : 'Sem valor cadastrado para esta costureira neste nível.';
+}
+function calcBtnNome(){ const sel = document.getElementById('calc-cost'), b = document.getElementById('calc-autorizar'); if(!sel||!b) return;
+  b.textContent = sel.value ? `✅ Autorizar e lançar na lista de ${sel.options[sel.selectedIndex].text}` : '✅ Autorizar e lançar na lista da costureira'; }
+async function calcAutorizar(fichaId, nomeFicha){
+  const sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado'), chk = document.getElementById('calc-lancar');
+  const qtd = Number(document.getElementById('calc-qtd').value)||0, vUn = parseFloat(String(document.getElementById('calc-valor').value).replace(/\./g,'').replace(',','.'))||0;
+  if(!sel.value){ msg.innerHTML = '<span style="color:var(--danger)">Escolha a costureira.</span>'; return; }
+  if(!qtd){ msg.innerHTML = '<span style="color:var(--danger)">Coloque a quantidade.</span>'; return; }
+  const nomeC = sel.options[sel.selectedIndex].text;
+  if(!confirm(`Lançar na lista de ${nomeC}?\n\n${qtd} × ${nomeFicha}\n${vUn ? qtd+' × '+money(vUn)+' = '+money(qtd*vUn) : 'sem valor por peça'}`)) return;
+  chk.checked = true; await calcLancarProducao(fichaId, nomeFicha, qtd, vUn);
+  const b = document.getElementById('calc-autorizar'); if(b && /Lançado/.test(msg.textContent)){ b.disabled = true; b.textContent = '✅ Lançado'; }
 }
 async function calcLancarProducao(fichaId, nomeFicha, qtd, vUn){
   const chk = document.getElementById('calc-lancar'), sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado');
