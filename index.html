@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 08:45</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 09:15</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -474,7 +474,7 @@ async function prodSalvarProntas(pecaId){
   const [tipo, id] = v ? v.split('|') : [null, null], serv = p.servico_id || p.ficha_id;
   const { data: sv } = await sb.from('fichas_tecnicas').select('nome').eq('id', serv).maybeSingle();
   const nomeP = p.fichas_tecnicas?.nome || '', produto = sv && sv.nome && serv !== p.ficha_id ? `${sv.nome} (${nomeP})` : nomeP;
-  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: tipo, pessoa_id: id, ficha_id: serv, produto, quantidade: qtd, valor_unit, data: document.getElementById('mp-data').value || todayISO(), peca_id: pecaId });
+  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: tipo, pessoa_id: id, ficha_id: serv, produto_ficha_id: p.ficha_id || null, produto, quantidade: qtd, valor_unit, data: document.getElementById('mp-data').value || todayISO(), peca_id: pecaId });
   if(error){ msg.textContent = error.message; return; }
   const { data: ls } = await sb.from('producao_lancamentos').select('quantidade').eq('peca_id', pecaId);
   const feitas = (ls||[]).reduce((s,l)=>s+(Number(l.quantidade)||0),0);
@@ -2564,8 +2564,12 @@ async function plRender(pessoaId){
   const itens = data||[], tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0);
   const abertos = itens.filter(l=>!l.pago), pagos = itens.filter(l=>l.pago);
   window._plItens = {}; itens.forEach(l => { window._plItens[l.id] = l; });
+  const fids = [...new Set(itens.map(l=>l.produto_ficha_id).filter(Boolean))], fotoDe = {};
+  if(fids.length){ const { data: ff } = await sb.from('ficha_fotos').select('ficha_id,url,ordem').in('ficha_id', fids).order('ordem'); (ff||[]).forEach(f => { if(!fotoDe[f.ficha_id]) fotoDe[f.ficha_id] = f.url; }); }
+  itens.forEach(l => { l._foto = fotoDe[l.produto_ficha_id] || ''; });
+  window._plImgs = {}; itens.forEach(l => { if(l._foto && !l.pago){ const im = new Image(); im.crossOrigin = 'anonymous'; im.src = l._foto; window._plImgs[l.id] = im; } });
   const linha = (l, aberto) => `<div class="item" id="pl-it-${l.id}" style="flex-direction:column;align-items:stretch;gap:4px;">
-      <div style="display:flex;justify-content:space-between;gap:8px;"><span><b>${escAttr(String(l.produto||'').replace(/ · [a-z]{3}\/\d{2}$/,''))}</b>${l.ficha_id ? `<div class="muted" style="font-size:12px;">${l.quantidade} × ${money(l.valor_unit)}</div>` : ''}</span><b style="white-space:nowrap;">${money(tot(l))}</b></div>
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">${l._foto?`<img src="${l._foto}" loading="lazy" decoding="async" class="foto-thumb" style="width:46px;height:46px;flex:none;">`:''}<span style="flex:1;min-width:0;"><b>${escAttr(String(l.produto||'').replace(/ · [a-z]{3}\/\d{2}$/,''))}</b>${l.ficha_id ? `<div class="muted" style="font-size:12px;">${l.quantidade} × ${money(l.valor_unit)}</div>` : ''}</span><b style="white-space:nowrap;">${money(tot(l))}</b></div>
       ${aberto ? `<div style="display:flex;gap:8px;"><span style="flex:1"></span><button class="btn sm ghost" onclick="plEditar('${l.id}','${pessoaId}')">Editar</button><button class="btn sm ghost" onclick="plExcluir('${l.id}','${pessoaId}')">Excluir</button></div>` : `<div class="muted" style="font-size:12px;color:#2E8B57;">✅ Pago em ${fmtDate(l.pago_em)} <a href="#" onclick="plDesfazer('${l.id}','${pessoaId}');return false;" style="margin-left:8px;">desfazer</a></div>`}
     </div>`;
   const totAberto = abertos.reduce((s,l)=>s+tot(l),0);
@@ -2590,7 +2594,7 @@ async function plRender(pessoaId){
   }
   div.innerHTML = h;
 }
-function plImagem(es){
+function plImagem(es, semFotos){
   const p = window._plPessoa || {}, itens = Object.values(window._plItens||{}).filter(l=>!l.pago).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
   const tot = (l) => (Number(l.quantidade)||0)*(Number(l.valor_unit)||0), total = itens.reduce((s,l)=>s+tot(l),0);
   const dBR = (d) => d ? d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4) : '';
@@ -2607,8 +2611,10 @@ function plImagem(es){
   x.strokeStyle = '#2e3242'; x.lineWidth = 1;
   itens.forEach((l,i) => {
     const y = top + i*ROW;
-    x.fillStyle = '#ffffff'; x.font = '600 24px '+sans; x.fillText(fit(l.produto||'', '600 24px '+sans, W-2*PAD-190), PAD, y);
-    x.fillStyle = '#8b90a0'; x.font = '19px '+sans; x.fillText(dBR(l.data)+'  ·  '+l.quantidade+' × '+money(l.valor_unit), PAD, y+32);
+    const im = !semFotos && (window._plImgs||{})[l.id], temIm = im && im.complete && im.naturalWidth > 0, X = temIm ? PAD + 82 : PAD;
+    if(temIm){ const sz = 68, sw = Math.min(im.naturalWidth, im.naturalHeight); x.save(); x.beginPath(); x.roundRect(PAD, y-30, sz, sz, 10); x.clip(); x.drawImage(im, (im.naturalWidth-sw)/2, (im.naturalHeight-sw)/2, sw, sw, PAD, y-30, sz, sz); x.restore(); }
+    x.fillStyle = '#ffffff'; x.font = '600 24px '+sans; x.fillText(fit(l.produto||'', '600 24px '+sans, W-PAD-X-190), X, y);
+    x.fillStyle = '#8b90a0'; x.font = '19px '+sans; x.fillText(dBR(l.data)+'  ·  '+l.quantidade+' × '+money(l.valor_unit), X, y+32);
     x.fillStyle = '#ffffff'; x.font = '700 26px '+sans; x.textAlign = 'right'; x.fillText(money(tot(l)), W-PAD, y+6); x.textAlign = 'left';
     x.beginPath(); x.moveTo(PAD, y+60); x.lineTo(W-PAD, y+60); x.stroke();
   });
@@ -2640,7 +2646,7 @@ async function plImprimirA4(pessoaId, ids){
   const salHtml = sal.length ? `<h2>Salário e vales</h2><table>${sal.map(l => { const v = tot(l); return `<tr><td>${esc(l.produto||'')}</td><td class="v" style="${v<0?'color:#b03a2e':''}"><b>${v<0?'− ':''}${money(Math.abs(v))}</b></td></tr>`; }).join('')}<tr class="mes"><td>Subtotal salário e vales</td><td class="v">${money(totSal)}</td></tr></table>` : '';
   const corpo = Object.keys(g).sort().map(m => { const [y,mm] = m.split('-'), t = g[m].reduce((s,l)=>s+tot(l),0);
     return `<tr class="mes"><td colspan="3">${(PL_MESES[Number(mm)-1]||'').toUpperCase()}/${y}</td><td class="v">${money(t)}</td></tr>` +
-      g[m].map(l => `<tr><td>${esc(String(l.produto||'').replace(/ · [a-z]{3}\/\d{2}$/,''))}</td><td class="c">${l.quantidade}</td><td class="v">${money(l.valor_unit)}</td><td class="v"><b>${money(tot(l))}</b></td></tr>`).join(''); }).join('');
+      g[m].map(l => `<tr><td>${l._foto?`<img src="${l._foto}" style="width:26px;height:26px;object-fit:cover;border-radius:3px;vertical-align:middle;margin-right:6px;">`:''}${esc(String(l.produto||'').replace(/ · [a-z]{3}\/\d{2}$/,''))}</td><td class="c">${l.quantidade}</td><td class="v">${money(l.valor_unit)}</td><td class="v"><b>${money(tot(l))}</b></td></tr>`).join(''); }).join('');
   const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Produção · ${esc(p.nome||'')}</title><style>
     @page{size:A4;margin:10mm}body{font-family:Arial,sans-serif;color:#111;margin:0;font-size:11px}
     .top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #c4a574;padding-bottom:4px;margin-bottom:8px}
@@ -2669,8 +2675,9 @@ async function plImprimirA4(pessoaId, ids){
   setTimeout(() => { fr.contentWindow.focus(); fr.contentWindow.print(); }, 300);
 }
 function plWhats(pessoaId, es){
-  const p = window._plPessoa || {}, c = plImagem(es);
-  const url = c.toDataURL('image/png'), bin = atob(url.split(',')[1]), arr = new Uint8Array(bin.length);
+  const p = window._plPessoa || {}; let c = plImagem(es), url;
+  try { url = c.toDataURL('image/png'); } catch(e){ c = plImagem(es, true); url = c.toDataURL('image/png'); }
+  const bin = atob(url.split(',')[1]), arr = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
   const nomeArq = 'producao-'+String(p.nome||'costureira').toLowerCase().replace(/[^a-z0-9]+/g,'-')+'.png';
   const file = new File([arr], nomeArq, { type: 'image/png' });
@@ -3354,7 +3361,7 @@ async function calcLancarProducao(fichaId, nomeFicha, qtd, vUn){
   const chk = document.getElementById('calc-lancar'), sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado');
   if(!chk || !chk.checked || !sel.value || !qtd) return;
   const nomeC = sel.options[sel.selectedIndex].text, sv = await calcServico(fichaId);
-  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: 'costureiras', pessoa_id: sel.value, ficha_id: sv.id, produto: sv.nome || nomeFicha, quantidade: qtd, valor_unit: vUn, data: document.getElementById('calc-dprod').value || todayISO() });
+  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: 'costureiras', pessoa_id: sel.value, ficha_id: sv.id, produto_ficha_id: fichaId, produto: (sv.nome && sv.nome !== nomeFicha) ? `${nomeFicha} · ${sv.nome}` : nomeFicha, quantidade: qtd, valor_unit: vUn, data: document.getElementById('calc-dprod').value || todayISO() });
   if(error){ msg.textContent = 'Não lançou na produção: '+error.message; return; }
   chk.checked = false;
   msg.innerHTML = `✅ Lançado na Produção de <b>${escAttr(nomeC)}</b>: ${qtd} × ${money(vUn)} = ${money(qtd*vUn)}`;
