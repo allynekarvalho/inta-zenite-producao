@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 09:15</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 09:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -448,17 +448,36 @@ async function prodMarcarProntas(pecaId){
   const feitas = (ls||[]).reduce((s,l)=>s+(Number(l.quantidade)||0),0), falta = Math.max(0, (Number(p.quantidade)||0) - feitas);
   showModal(`<h2>Marcar prontas <button class="close" onclick="closeModal()">&times;</button></h2>
     <p class="muted">${escAttr(p.fichas_tecnicas?.nome||'Peça')} · Pedido #${p.pedidos?.numero||''} · prontas ${feitas} de ${p.quantidade}</p>
-    <label>Quem fez</label><select id="mp-quem" onchange="prodValorSugerido('${pecaId}')"><option value="">— Não informar —</option>
+    <label>Quem fez</label><select id="mp-quem" onchange="prodValorSugerido('${pecaId}').then(()=>mpParceria('${pecaId}'))"><option value="">— Não informar —</option>
       ${(cs||[]).map(x=>`<option value="costureiras|${x.id}">${escAttr(x.nome)}</option>`).join('')}
       ${(fs||[]).length?`<optgroup label="Faccionistas">${fs.map(x=>`<option value="faccionistas|${x.id}">${escAttr(x.nome)}</option>`).join('')}</optgroup>`:''}</select>
     <div class="row" style="gap:8px;">
-      <div style="flex:1"><label>Quantas ficaram prontas</label><input id="mp-qtd" type="number" min="1" value="${falta||''}"></div>
+      <div style="flex:1"><label>Quantas ficaram prontas</label><input id="mp-qtd" type="number" min="1" value="${falta||''}" oninput="if(document.getElementById('mp-q1')) mpParceria('${pecaId}')"></div>
       <div style="flex:1"><label>Valor por peça (R$)</label><input id="mp-valor" inputmode="decimal" placeholder="0,00"></div>
     </div>
+    <label>🤝 Fez em parceria com (opcional)</label><select id="mp-parc" onchange="mpParceria('${pecaId}')"><option value="">— Sozinha —</option>
+      ${(cs||[]).map(x=>`<option value="${x.id}">${escAttr(x.nome)}</option>`).join('')}</select>
+    <div id="mp-div" class="card" style="display:none;margin-top:8px;padding:10px 12px;"></div>
     <label>Data</label><input id="mp-data" type="date" value="${todayISO()}">
     <p class="muted" style="font-size:12px;">Se escolher quem fez, já entra na produção dela para pagamento.</p>
     <button class="btn block gold" style="margin-top:10px;" onclick="prodSalvarProntas('${pecaId}')">Salvar</button><p id="mp-msg" class="error"></p>`);
 }
+// parceria: divide a quantidade (metade para cada, pode mudar) e cada uma recebe pelo valor dela
+async function mpParceria(pecaId){
+  const p = (window._prodPecas||{})[pecaId], box = document.getElementById('mp-div'), pid = document.getElementById('mp-parc').value, quem = document.getElementById('mp-quem');
+  if(!pid){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  if(!quem.value){ box.style.display = 'block'; box.innerHTML = '<span class="error">Escolha primeiro em "Quem fez" a outra costureira.</span>'; return; }
+  const tot = Number(document.getElementById('mp-qtd').value)||0, q1 = Math.ceil(tot/2), q2 = tot - q1;
+  const serv = p.servico_id || p.ficha_id, v2 = await valorCostureiraServico(pid, serv);
+  const n1 = quem.options[quem.selectedIndex].text, sp = document.getElementById('mp-parc'), n2 = sp.options[sp.selectedIndex].text;
+  box.style.display = 'block';
+  box.innerHTML = `<div class="muted" style="font-size:12.5px;margin-bottom:6px;">Divisão para o pagamento (metade para cada — pode mudar):</div>
+    <div class="row" style="gap:8px;align-items:center;"><b style="flex:1">${escAttr(n1)}</b><input id="mp-q1" type="number" min="0" value="${q1}" style="width:70px;margin:0;" oninput="mpDivAjusta(1)"><span class="muted">peças</span></div>
+    <div class="row" style="gap:8px;align-items:center;margin-top:6px;"><b style="flex:1">${escAttr(n2)}</b><input id="mp-q2" type="number" min="0" value="${q2}" style="width:70px;margin:0;" oninput="mpDivAjusta(2)"><span class="muted">peças</span></div>
+    <label style="margin-top:8px;">Valor por peça de ${escAttr(n2)} (R$)</label><input id="mp-valor2" inputmode="decimal" value="${v2!=null?String(v2).replace('.',','):''}" placeholder="0,00">`;
+}
+function mpDivAjusta(qual){ const tot = Number(document.getElementById('mp-qtd').value)||0, a = document.getElementById('mp-q1'), b = document.getElementById('mp-q2');
+  if(qual===1) b.value = Math.max(0, tot - (Number(a.value)||0)); else a.value = Math.max(0, tot - (Number(b.value)||0)); }
 async function prodValorSugerido(pecaId){
   const p = (window._prodPecas||{})[pecaId], v = document.getElementById('mp-quem').value; if(!p || !v) return;
   const [tipo, id] = v.split('|'), serv = p.servico_id || p.ficha_id;
@@ -473,8 +492,16 @@ async function prodSalvarProntas(pecaId){
   if(!qtd){ msg.textContent = 'Coloque a quantidade.'; return; }
   const [tipo, id] = v ? v.split('|') : [null, null], serv = p.servico_id || p.ficha_id;
   const { data: sv } = await sb.from('fichas_tecnicas').select('nome').eq('id', serv).maybeSingle();
-  const nomeP = p.fichas_tecnicas?.nome || '', produto = sv && sv.nome && serv !== p.ficha_id ? `${sv.nome} (${nomeP})` : nomeP;
-  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: tipo, pessoa_id: id, ficha_id: serv, produto_ficha_id: p.ficha_id || null, produto, quantidade: qtd, valor_unit, data: document.getElementById('mp-data').value || todayISO(), peca_id: pecaId });
+  const nomeP = p.fichas_tecnicas?.nome || '', produto = sv && sv.nome && serv !== p.ficha_id ? sv.nome : nomeP;
+  const dt = document.getElementById('mp-data').value || todayISO(), parc = document.getElementById('mp-parc') && document.getElementById('mp-parc').value;
+  const base = { ficha_id: serv, produto_ficha_id: p.ficha_id || null, produto, data: dt, peca_id: pecaId };
+  let linhas = [{ ...base, pessoa_tipo: tipo, pessoa_id: id, quantidade: qtd, valor_unit }];
+  if(parc && id){
+    const q1 = Number(document.getElementById('mp-q1').value)||0, q2 = Number(document.getElementById('mp-q2').value)||0;
+    if(q1 + q2 !== qtd){ msg.textContent = `A divisão (${q1} + ${q2}) tem que dar ${qtd}.`; return; }
+    linhas = [{ ...base, pessoa_tipo: tipo, pessoa_id: id, quantidade: q1, valor_unit }, { ...base, pessoa_tipo: 'costureiras', pessoa_id: parc, quantidade: q2, valor_unit: numBR(document.getElementById('mp-valor2').value)||0 }].filter(l => l.quantidade > 0);
+  }
+  const { error } = await sb.from('producao_lancamentos').insert(linhas);
   if(error){ msg.textContent = error.message; return; }
   const { data: ls } = await sb.from('producao_lancamentos').select('quantidade').eq('peca_id', pecaId);
   const feitas = (ls||[]).reduce((s,l)=>s+(Number(l.quantidade)||0),0);
@@ -3305,12 +3332,14 @@ async function selecionarFichaCalc(fichaId, nome){
     <div id="calc-totais" style="margin-top:10px;"></div>
     <div class="card" style="margin-top:12px;">
       <strong style="font-size:13px;">Para a folha da costureira</strong>
-      <label>Costureira</label><select id="calc-cost" onchange="calcValorCost('${fichaId}'); calcBtnNome();"><option value="">—</option></select>
+      <label>Costureira</label><select id="calc-cost" onchange="calcValorCost('${fichaId}'); calcBtnNome(); if(document.getElementById('calc-parc').value) calcParceria('${fichaId}');"><option value="">—</option></select>
       <div class="row" style="gap:8px;">
         <div style="flex:1"><label>Data de produção</label><input id="calc-dprod" type="date" value="${todayISO()}"></div>
         <div style="flex:1"><label>Data de entrega</label><input id="calc-dent" type="date"></div>
       </div>
       <label>Valor por peça (R$) <span id="calc-nivel-nome" class="muted" style="font-size:12px;"></span></label><input id="calc-valor" inputmode="decimal" placeholder="escolha a costureira"><div id="calc-nivel" class="muted" style="font-size:12px;margin-top:2px;"></div>
+      <label>🤝 Parceria com (opcional)</label><select id="calc-parc" onchange="calcParceria('${fichaId}')"><option value="">— Sozinha —</option></select>
+      <div id="calc-div" style="display:none;margin-top:6px;"></div>
       <button id="calc-autorizar" class="btn block gold" style="margin-top:12px;" onclick="calcAutorizar('${fichaId}','${nome.replace(/'/g,"\'")}')">✅ Autorizar e lançar na lista da costureira</button>
       <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="calc-lancar" checked> Lançar também ao imprimir (se ainda não lançou)</label>
       <div id="calc-lancado" class="muted" style="font-size:13px;margin-top:6px;"></div>
@@ -3321,7 +3350,7 @@ async function selecionarFichaCalc(fichaId, nome){
   div.dataset.materiais = JSON.stringify(materiais||[]);
   div.dataset.ficha = fichaId;
   atualizarCalcTotais(fichaId);
-  sb.from('costureiras').select('id,nome').eq('ativo', true).order('nome').then(({data})=>{ const sel=document.getElementById('calc-cost'); if(sel) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; sel.appendChild(o); }); if(sel && sel.value) calcValorCost(fichaId); });
+  sb.from('costureiras').select('id,nome').eq('ativo', true).order('nome').then(({data})=>{ const sel=document.getElementById('calc-cost'); if(sel) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; sel.appendChild(o); }); const sp=document.getElementById('calc-parc'); if(sp) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; sp.appendChild(o); }); if(sel && sel.value) calcValorCost(fichaId); });
   calcServico(fichaId).then(sv => { const el = document.getElementById('calc-nivel-nome'); if(el && sv && / · Nível /.test(sv.nome||'')) el.textContent = '· ' + sv.nome; });
 }
 async function calcServico(fichaId){
@@ -3345,14 +3374,42 @@ async function calcValorCost(fichaId){
   inp.value = v ? String(v).replace('.',',') : '';
   const nl = document.getElementById('calc-nivel'); if(nl) nl.textContent = v ? '' : 'Sem valor cadastrado para esta costureira neste nível.';
 }
+async function calcParceria(fichaId){
+  const box = document.getElementById('calc-div'), sp = document.getElementById('calc-parc'), sel = document.getElementById('calc-cost'); if(!box) return;
+  if(!sp.value){ box.style.display='none'; box.innerHTML=''; calcBtnNome(); return; }
+  if(!sel.value){ box.style.display='block'; box.innerHTML='<span class="error">Escolha primeiro a costureira acima.</span>'; return; }
+  const tot = Number(document.getElementById('calc-qtd').value)||0, q1 = Math.ceil(tot/2), q2 = tot - q1;
+  const sv = await calcServico(fichaId), v2 = await valorCostureiraServico(sp.value, sv.id);
+  const n1 = sel.options[sel.selectedIndex].text, n2 = sp.options[sp.selectedIndex].text;
+  box.style.display='block';
+  box.innerHTML = `<div class="muted" style="font-size:12.5px;margin-bottom:6px;">Divisão para o pagamento (metade para cada — pode mudar):</div>
+    <div class="row" style="gap:8px;align-items:center;"><b style="flex:1">${escAttr(n1)}</b><input id="calc-q1" type="number" min="0" value="${q1}" style="width:70px;margin:0;" oninput="calcDivAjusta(1)"><span class="muted">peças</span></div>
+    <div class="row" style="gap:8px;align-items:center;margin-top:6px;"><b style="flex:1">${escAttr(n2)}</b><input id="calc-q2" type="number" min="0" value="${q2}" style="width:70px;margin:0;" oninput="calcDivAjusta(2)"><span class="muted">peças</span></div>
+    <label style="margin-top:8px;">Valor por peça de ${escAttr(n2)} (R$)</label><input id="calc-valor2" inputmode="decimal" value="${v2!=null?String(v2).replace('.',','):''}" placeholder="0,00">`;
+  calcBtnNome();
+}
+function calcDivAjusta(qual){ const tot = Number(document.getElementById('calc-qtd').value)||0, a = document.getElementById('calc-q1'), b = document.getElementById('calc-q2');
+  if(qual===1) b.value = Math.max(0, tot - (Number(a.value)||0)); else a.value = Math.max(0, tot - (Number(b.value)||0)); }
 function calcBtnNome(){ const sel = document.getElementById('calc-cost'), b = document.getElementById('calc-autorizar'); if(!sel||!b) return;
-  b.textContent = sel.value ? `✅ Autorizar e lançar na lista de ${sel.options[sel.selectedIndex].text}` : '✅ Autorizar e lançar na lista da costureira'; }
+  const sp = document.getElementById('calc-parc'), dupla = sp && sp.value && sel.value;
+  b.textContent = dupla ? `✅ Autorizar e lançar para ${sel.options[sel.selectedIndex].text} e ${sp.options[sp.selectedIndex].text}` : sel.value ? `✅ Autorizar e lançar na lista de ${sel.options[sel.selectedIndex].text}` : '✅ Autorizar e lançar na lista da costureira'; }
 async function calcAutorizar(fichaId, nomeFicha){
   const sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado'), chk = document.getElementById('calc-lancar');
   const qtd = Number(document.getElementById('calc-qtd').value)||0, vUn = parseFloat(String(document.getElementById('calc-valor').value).replace(/\./g,'').replace(',','.'))||0;
   if(!sel.value){ msg.innerHTML = '<span style="color:var(--danger)">Escolha a costureira.</span>'; return; }
   if(!qtd){ msg.innerHTML = '<span style="color:var(--danger)">Coloque a quantidade.</span>'; return; }
-  const nomeC = sel.options[sel.selectedIndex].text;
+  const nomeC = sel.options[sel.selectedIndex].text, sp = document.getElementById('calc-parc');
+  if(sp && sp.value){
+    const q1 = Number(document.getElementById('calc-q1').value)||0, q2 = Number(document.getElementById('calc-q2').value)||0, v2 = parseFloat(String(document.getElementById('calc-valor2').value).replace(/\./g,'').replace(',','.'))||0, n2 = sp.options[sp.selectedIndex].text;
+    if(q1 + q2 !== qtd){ msg.innerHTML = `<span style="color:var(--danger)">A divisão (${q1} + ${q2}) tem que dar ${qtd}.</span>`; return; }
+    if(!confirm(`Lançar em parceria?\n\n${nomeC}: ${q1} × ${money(vUn)} = ${money(q1*vUn)}\n${n2}: ${q2} × ${money(v2)} = ${money(q2*v2)}`)) return;
+    const sv = await calcServico(fichaId), dt = document.getElementById('calc-dprod').value || todayISO();
+    const base = { pessoa_tipo:'costureiras', ficha_id: sv.id, produto_ficha_id: fichaId, produto: sv.nome || nomeFicha, data: dt };
+    const { error } = await sb.from('producao_lancamentos').insert([{ ...base, pessoa_id: sel.value, quantidade: q1, valor_unit: vUn }, { ...base, pessoa_id: sp.value, quantidade: q2, valor_unit: v2 }].filter(l=>l.quantidade>0));
+    if(error){ msg.textContent = 'Não lançou: '+error.message; return; }
+    chk.checked = false; msg.innerHTML = `✅ Lançado: <b>${escAttr(nomeC)}</b> ${q1} × ${money(vUn)} · <b>${escAttr(n2)}</b> ${q2} × ${money(v2)}`;
+    const b = document.getElementById('calc-autorizar'); if(b){ b.disabled = true; b.textContent = '✅ Lançado'; } return;
+  }
   if(!confirm(`Lançar na lista de ${nomeC}?\n\n${qtd} × ${nomeFicha}\n${vUn ? qtd+' × '+money(vUn)+' = '+money(qtd*vUn) : 'sem valor por peça'}`)) return;
   chk.checked = true; await calcLancarProducao(fichaId, nomeFicha, qtd, vUn);
   const b = document.getElementById('calc-autorizar'); if(b && /Lançado/.test(msg.textContent)){ b.disabled = true; b.textContent = '✅ Lançado'; }
@@ -3360,8 +3417,9 @@ async function calcAutorizar(fichaId, nomeFicha){
 async function calcLancarProducao(fichaId, nomeFicha, qtd, vUn){
   const chk = document.getElementById('calc-lancar'), sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado');
   if(!chk || !chk.checked || !sel.value || !qtd) return;
+  const spp = document.getElementById('calc-parc'); if(spp && spp.value){ msg.innerHTML = 'Parceria: use o botão ✅ Autorizar para lançar a divisão.'; return; }
   const nomeC = sel.options[sel.selectedIndex].text, sv = await calcServico(fichaId);
-  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: 'costureiras', pessoa_id: sel.value, ficha_id: sv.id, produto_ficha_id: fichaId, produto: (sv.nome && sv.nome !== nomeFicha) ? `${nomeFicha} · ${sv.nome}` : nomeFicha, quantidade: qtd, valor_unit: vUn, data: document.getElementById('calc-dprod').value || todayISO() });
+  const { error } = await sb.from('producao_lancamentos').insert({ pessoa_tipo: 'costureiras', pessoa_id: sel.value, ficha_id: sv.id, produto_ficha_id: fichaId, produto: sv.nome || nomeFicha, quantidade: qtd, valor_unit: vUn, data: document.getElementById('calc-dprod').value || todayISO() });
   if(error){ msg.textContent = 'Não lançou na produção: '+error.message; return; }
   chk.checked = false;
   msg.innerHTML = `✅ Lançado na Produção de <b>${escAttr(nomeC)}</b>: ${qtd} × ${money(vUn)} = ${money(qtd*vUn)}`;
