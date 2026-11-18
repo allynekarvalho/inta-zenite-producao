@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 09:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 20:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1458,7 +1458,9 @@ async function renderPedidos(){
   if(error){ html += `<p class="error">${error.message}</p>`; c.innerHTML = html; return; }
   if(!pedidos || pedidos.length===0){ html += `<div class="card center muted">Nenhum pedido ainda.</div>`; c.innerHTML = html; return; }
 
-  html += pedidos.map(p => {
+  const entregueP = p => !!p.entrega_tipo || ((p.pecas||[]).length > 0 && (p.pecas||[]).every(x => x.status==='entregue'));
+  const ativos = pedidos.filter(p => !entregueP(p)), entregues = pedidos.filter(entregueP);
+  const cardPed = p => {
     const total = p.pecas?.length || 0;
     const prontos = p.pecas?.filter(x=>x.status==='pronto'||x.status==='entregue').length || 0;
     const vt = (p.pecas||[]).reduce((s,x)=>s+vendaLinha(x),0) + (Number(p.frete)||0), vp = (p.pedido_pagamentos||[]).reduce((s,x)=>s+Number(x.valor||0),0), vf = vt - vp;
@@ -1468,14 +1470,19 @@ async function renderPedidos(){
     <div class="card" onclick="abrirPedido('${p.id}')" style="cursor:pointer;">
       <div style="display:flex;justify-content:space-between;">
         <strong>#${p.numero} · ${p.clientes?.nome || ''}</strong>
-        <span style="white-space:nowrap;">${p.urgente ? '<span class="pill urgente">Urgente</span> ' : ''}${p.autorizado_em ? '<span class="pill" style="background:rgba(46,125,79,.15);color:var(--ok,#2e7d4f);">Em produção</span>' : '<span class="pill" style="background:rgba(183,121,31,.15);color:#b7791f;">📝 Orçamento</span>'}</span>
+        <span style="white-space:nowrap;">${p.urgente ? '<span class="pill urgente">Urgente</span> ' : ''}${entregueP(p) ? '<span class="pill" style="background:rgba(120,120,120,.15);color:var(--muted);">✅ Entregue</span>' : p.autorizado_em ? '<span class="pill" style="background:rgba(46,125,79,.15);color:var(--ok,#2e7d4f);">Em produção</span>' : '<span class="pill" style="background:rgba(183,121,31,.15);color:#b7791f;">📝 Orçamento</span>'}</span>
       </div>
       <div class="muted">Prazo: ${p.prazo ? fmtDate(p.prazo) : '—'} · ${prontos}/${total} peças prontas${vt>0?` · ${money(vt)}`:''}</div>
       ${pz && pz.d <= 3 ? `<div style="font-size:13px;font-weight:600;color:${pz.cor};margin-top:2px;">${pz.txt}</div>` : ''}
       ${p.entrega_tipo?`<div style="font-size:13px;margin-top:2px;color:var(--ok);">${p.entrega_tipo==='enviado'?`🚚 Enviado${p.transportadora?' · '+escAttr(p.transportadora):''}`:'🤝 Entregue'}${p.enviado_em?' em '+fmtDate(p.enviado_em):''}</div>`:''}
       ${pagTxt?`<div style="font-size:13px;margin-top:2px;">${pagTxt}${p.pag_escolha && vf>0.009?` · quer pagar com <b>${escAttr(p.pag_escolha)}</b>`:''}</div>`:''}
     </div>`;
-  }).join('');
+  };
+  html += ativos.length ? ativos.map(cardPed).join('') : '<div class="card center muted">Nenhum pedido em aberto. 🎉</div>';
+  if(entregues.length){
+    const falta = entregues.reduce((s,p) => s + Math.max(0, (p.pecas||[]).reduce((a,x)=>a+vendaLinha(x),0) + (Number(p.frete)||0) - (p.pedido_pagamentos||[]).reduce((a,x)=>a+Number(x.valor||0),0)), 0);
+    html += `<details style="margin-top:18px;"><summary style="cursor:pointer;list-style:none;padding:12px 4px;font-weight:600;">✅ Entregues (${entregues.length})${falta>0.009?` · <span style="color:var(--danger);">falta receber ${money(falta)}</span>`:''} <span class="muted" style="font-weight:400;">ver ›</span></summary>${entregues.map(cardPed).join('')}</details>`;
+  }
   c.innerHTML = html;
 }
 
