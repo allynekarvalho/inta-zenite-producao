@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 17/11 09:30</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 08:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -3303,7 +3303,7 @@ async function selecionarFichaCalc(fichaId, nome){
         <div style="flex:1"><label>Data de produção</label><input id="calc-dprod" type="date" value="${todayISO()}"></div>
         <div style="flex:1"><label>Data de entrega</label><input id="calc-dent" type="date"></div>
       </div>
-      <label>Valor por peça (R$)</label><input id="calc-valor" inputmode="decimal" placeholder="0,00">
+      <label>Valor por peça (R$) <span id="calc-nivel-nome" class="muted" style="font-size:12px;"></span></label><input id="calc-valor" inputmode="decimal" placeholder="escolha a costureira"><div id="calc-nivel" class="muted" style="font-size:12px;margin-top:2px;"></div>
       <label class="checkline" style="margin-top:10px;"><input type="checkbox" id="calc-lancar" checked> Lançar na Produção da costureira ao imprimir</label>
       <div id="calc-lancado" class="muted" style="font-size:12px;margin-top:4px;"></div>
     </div>
@@ -3313,9 +3313,12 @@ async function selecionarFichaCalc(fichaId, nome){
   div.dataset.materiais = JSON.stringify(materiais||[]);
   div.dataset.ficha = fichaId;
   atualizarCalcTotais(fichaId);
-  sb.from('costureiras').select('id,nome').eq('ativo', true).order('nome').then(({data})=>{ const sel=document.getElementById('calc-cost'); if(sel) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; sel.appendChild(o); }); });
+  sb.from('costureiras').select('id,nome').eq('ativo', true).order('nome').then(({data})=>{ const sel=document.getElementById('calc-cost'); if(sel) (data||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; sel.appendChild(o); }); if(sel && sel.value) calcValorCost(fichaId); });
+  calcServico(fichaId).then(sv => { const el = document.getElementById('calc-nivel-nome'); if(el && sv && / · Nível /.test(sv.nome||'')) el.textContent = '· ' + sv.nome; });
 }
 async function calcServico(fichaId){
+  const nv = await nivelDaPeca(fichaId, false).catch(() => null);
+  if(nv && nv.servico_id){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').eq('id', nv.servico_id).single(); if(sv) return sv; }
   const { data: f } = await sb.from('fichas_tecnicas').select('id,nome,servico_id').eq('id', fichaId).single();
   if(f && f.servico_id){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').eq('id', f.servico_id).single(); if(sv) return sv; }
   return f || { id: fichaId, nome: '' };
@@ -3331,7 +3334,8 @@ async function calcValorCost(fichaId){
     const { data: pt } = await sb.from('precos_tabela').select('valor').eq('tabela', (c && Number(c.tabela)===1) ? 1 : 2).eq('ficha_id', fichaId);
     v = pt && pt[0] && Number(pt[0].valor);
   }
-  if(v) inp.value = String(v).replace('.',',');
+  inp.value = v ? String(v).replace('.',',') : '';
+  const nl = document.getElementById('calc-nivel'); if(nl) nl.textContent = v ? '' : 'Sem valor cadastrado para esta costureira neste nível.';
 }
 async function calcLancarProducao(fichaId, nomeFicha, qtd, vUn){
   const chk = document.getElementById('calc-lancar'), sel = document.getElementById('calc-cost'), msg = document.getElementById('calc-lancado');
