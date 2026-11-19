@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 23:20</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 19/11 12:00</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -3030,6 +3030,15 @@ async function renderMateriais(){
   const { data: materiais, error } = await sb.from('materiais').select('*, fornecedores(nome)').order('nome');
   if(error){ c.innerHTML = `<p class="error">${error.message}</p>`; return; }
   window._estoqueCache = materiais||[];
+  // sem foto própria? usa a foto do produto pronto que leva esse material (ex.: corpo/abeta do avental)
+  try{
+    const semFoto = (materiais||[]).filter(m => !m.foto_url && ehCortado(m)).map(m => m.id);
+    if(semFoto.length){
+      const { data: fm } = await sb.from('ficha_materiais').select('material_id, fichas_tecnicas(tipo, ficha_fotos(url,ordem))').in('material_id', semFoto);
+      const fp = {}; (fm||[]).forEach(r => { const f = r.fichas_tecnicas; if(!f || f.tipo!=='produto' || fp[r.material_id]) return; const ff = (f.ficha_fotos||[]).slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0))[0]; if(ff) fp[r.material_id] = ff.url; });
+      (materiais||[]).forEach(m => { if(!m.foto_url && fp[m.id]) m._fotoProd = fp[m.id]; });
+    }
+  }catch(e){}
   try{ const { data: rcs } = await sb.from('material_receita').select('componente_id,material_id,quantidade'); window._receitas = {}; (rcs||[]).forEach(r => { (window._receitas[r.componente_id] = window._receitas[r.componente_id]||[]).push(r); }); }catch(e){ window._receitas = {}; }
   const comprar = (materiais||[]).filter(m => situacaoMaterial(m) !== 'ok');
   const filtro = state.estoqueCat || 'Todas';
@@ -3070,7 +3079,7 @@ function cardMaterialHtml(m){
       return `
       <div class="card" style="padding:12px;">
         <div style="display:flex;gap:10px;align-items:center;cursor:pointer;" onclick="editarMaterial('${m.id}')">
-          ${m.foto_url ? `<img src="${m.foto_url}" class="foto-thumb" style="width:48px;height:48px;">` : `<div class="foto-thumb" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:var(--muted);">📦</div>`}
+          ${(m.foto_url||m._fotoProd) ? `<img src="${m.foto_url||m._fotoProd}" loading="lazy" decoding="async" class="foto-thumb" style="width:48px;height:48px;">` : `<div class="foto-thumb" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:var(--muted);">📦</div>`}
           <div style="flex:1;min-width:0;">
             <strong>${m.nome}</strong>
             ${detalheMaterial(m)?`<div class="muted" style="font-size:12px;">${detalheMaterial(m)}</div>`:''}
@@ -3100,10 +3109,10 @@ function cortesGruposHtml(itens){
   itens.forEach(m => { const g = grupoCorte(m); if(g){ (gs[g.modelo] = gs[g.modelo] || []).push(Object.assign({ _peca: g.peca }, m)); } else soltos.push(m); });
   const ordemP = { corpo:1, frente:1, abeta:2 };
   return Object.keys(gs).sort((a,b)=>a.localeCompare(b)).map(mod => {
-    const ms = gs[mod].sort((a,b)=>((ordemP[a._peca.toLowerCase()]||9)-(ordemP[b._peca.toLowerCase()]||9)) || a._peca.localeCompare(b._peca)), foto = (ms.find(x=>x.foto_url)||{}).foto_url;
+    const ms = gs[mod].sort((a,b)=>((ordemP[a._peca.toLowerCase()]||9)-(ordemP[b._peca.toLowerCase()]||9)) || a._peca.localeCompare(b._peca)), foto = (ms.find(x=>x.foto_url)||{}).foto_url || (ms.find(x=>x._fotoProd)||{})._fotoProd;
     return `<div class="card" style="padding:12px;">
       <div style="display:flex;gap:12px;align-items:center;">
-        ${foto ? `<img src="${foto}" class="foto-thumb" style="width:64px;height:64px;" onclick="editarMaterial('${ms[0].id}')">` : `<div class="foto-thumb" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;" onclick="editarMaterial('${ms[0].id}')" title="Pôr foto">📷</div>`}
+        ${foto ? `<img src="${foto}" loading="lazy" decoding="async" class="foto-thumb" style="width:64px;height:64px;" onclick="editarMaterial('${ms[0].id}')">` : `<div class="foto-thumb" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;" onclick="editarMaterial('${ms[0].id}')" title="Pôr foto">📷</div>`}
         <strong style="font-size:16px;flex:1;">${escAttr(mod)}</strong>
       </div>
       ${ms.map(m => { const sit = situacaoMaterial(m), cor = sit==='falta' ? 'var(--danger)' : (sit==='baixo' ? '#b7791f' : 'var(--ok)');
