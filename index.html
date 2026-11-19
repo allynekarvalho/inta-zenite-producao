@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 23:15</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 23:20</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1913,9 +1913,9 @@ function pecaItemHtml(p){
     ${fichaThumbImg(p.fichas_tecnicas, 44)}
     <div style="flex:1;min-width:0;">
       <div style="font-weight:600;line-height:1.25;">${escAttr(p.fichas_tecnicas?.nome||'Peça')} <span class="pill ${p.status}" style="font-size:10.5px;padding:2px 7px;vertical-align:1px;">${STATUS_LABEL[p.status]||''}</span></div>
-      <div class="muted" style="font-size:13px;margin-top:2px;">${p.kit_grupo || sem ? q+' un.' : q+' × '+money(unit)}${extra?' · '+extra:''}</div>
+      <div class="muted" style="font-size:13px;margin-top:2px;">${p.kit_grupo || sem || !v ? q+' un.' : q+' × '+money(unit)}${extra?' · '+extra:''}</div>
     </div>
-    ${p.kit_grupo ? '' : `<div style="text-align:right;white-space:nowrap;font-weight:600;${sem?'color:var(--danger);font-size:13px;font-weight:500;':''}">${sem?'pôr preço':money(v)}</div>`}
+    ${p.kit_grupo ? '' : `<div style="text-align:right;white-space:nowrap;font-weight:600;${sem?'color:var(--danger);font-size:13px;font-weight:500;':(!v?'font-size:13px;font-weight:500;color:var(--muted);':'')}">${sem?'pôr preço':(!v?'incluído':money(v))}</div>`}
     ${p.kit_grupo ? '' : `<button class="ped-del" title="Excluir" onclick="event.stopPropagation(); excluirPecaPedido('${p.id}','${p.pedido_id}')">🗑️</button>`}
   </div>`; }
 async function excluirPecaPedido(id, pedidoId){
@@ -2234,7 +2234,7 @@ function pedidoResumoHtml(pedido, pecas, pgs, aut, ent, pz){
     <div style="font-size:17px;font-weight:600;">${escAttr(pedido.clientes?.nome||'Sem cliente')}</div>
     <div class="muted" style="font-size:13.5px;">${ent ? 'pedido entregue' : (pedido.urgente?'⚡ Urgente · ':'') + (pz ? `<span style="color:${pz.cor};font-weight:600;">${pz.txt}</span>` : 'sem prazo')}</div>
     <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
-      ${itens.map(x => R(`<span style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="flex:none;min-width:44px;text-align:center;font-weight:800;color:var(--gold);background:rgba(201,164,104,.13);border-radius:8px;padding:2px 6px;">${x.q}</span><span style="min-width:0;">${escAttr(x.nome)}</span></span>`, x.sem && !x.v ? `<span style="color:var(--danger);font-size:13px;white-space:nowrap;">sem preço</span>` : `<b style="white-space:nowrap;">${money(x.v)}</b>`)).join('') || '<span class="muted">Nenhuma peça ainda.</span>'}
+      ${itens.map(x => R(`<span style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="flex:none;min-width:44px;text-align:center;font-weight:800;color:var(--gold);background:rgba(201,164,104,.13);border-radius:8px;padding:2px 6px;">${x.q}</span><span style="min-width:0;">${escAttr(x.nome)}</span></span>`, x.sem && !x.v ? `<span style="color:var(--danger);font-size:13px;white-space:nowrap;">sem preço</span>` : !x.v ? `<span class="muted" style="font-size:13px;white-space:nowrap;">incluído</span>` : `<b style="white-space:nowrap;">${money(x.v)}</b>`)).join('') || '<span class="muted">Nenhuma peça ainda.</span>'}
       ${frete ? R('<span class="muted">Frete</span>', `<b>${money(frete)}</b>`) : ''}
     </div>
     ${itens.length > 1 || frete ? R('<span class="muted">Total</span>', `<b>${money(total)}</b>`, 'border-top:1px solid var(--border);margin-top:10px;padding-top:10px;') : ''}
