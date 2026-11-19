@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 21:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 22:45</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -2056,6 +2056,32 @@ async function salvarPagPedido(pedidoId){
   if(error){ alert(error.message); return; }
   abrirPedido(pedidoId);
 }
+async function editarPagsPedido(pedidoId){
+  const { data: pg } = await sb.from('pedido_pagamentos').select('*').eq('pedido_id', pedidoId).order('data');
+  const box = document.getElementById('pp-area'); if(!box) return;
+  box.innerHTML = `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;"><b>✏️ Editar pagamentos</b>
+    ${(pg||[]).map(x => `<div class="pe-row" data-id="${x.id}" style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-top:8px;">
+      <div class="row" style="gap:8px;"><div style="flex:1"><label>Valor (R$)</label><input class="pe-v" inputmode="decimal" value="${String(Number(x.valor).toFixed(2)).replace('.',',')}"></div>
+        <div style="flex:1"><label>Data</label><input type="date" class="pe-d" value="${x.data||''}"></div></div>
+      <div class="row" style="gap:8px;"><div style="flex:1"><label>Forma</label><select class="pe-f">${formasPagHtml(x.forma||'')}</select></div>
+        <div style="flex:1"><label>Observação</label><input class="pe-o" value="${escAttr(x.obs||'')}"></div></div>
+      <label class="checkline" style="margin-top:6px;color:var(--danger);"><input type="checkbox" class="pe-x"> Excluir este pagamento</label></div>`).join('')}
+    <div class="row" style="gap:8px;margin-top:10px;"><button class="btn gold" style="flex:1" onclick="salvarPagsPedido('${pedidoId}')">Salvar</button><button class="btn ghost" style="flex:0 0 auto;width:auto;padding:0 14px;" onclick="abrirPedido('${pedidoId}')">Cancelar</button></div></div>`;
+  setTimeout(() => box.scrollIntoView({ behavior:'smooth', block:'start' }), 50);
+}
+async function salvarPagsPedido(pedidoId){
+  const rows = [...document.querySelectorAll('.pe-row')], apagar = rows.filter(r => r.querySelector('.pe-x').checked);
+  if(apagar.length && !confirm(`Excluir ${apagar.length} pagamento(s)?`)) return;
+  for(const r of rows){
+    const id = r.dataset.id;
+    if(r.querySelector('.pe-x').checked){ await sb.from('pedido_pagamentos').delete().eq('id', id); continue; }
+    const valor = numBR(r.querySelector('.pe-v').value);
+    if(!(valor > 0)){ alert('Tem pagamento sem valor.'); return; }
+    const { error } = await sb.from('pedido_pagamentos').update({ valor, data: r.querySelector('.pe-d').value || hojeISO(), forma: r.querySelector('.pe-f').value || null, obs: r.querySelector('.pe-o').value.trim() || null }).eq('id', id);
+    if(error){ alert(error.message); return; }
+  }
+  abrirPedido(pedidoId); if(state.tab==='pedidos') renderPedidos();
+}
 async function editarPagPedido(id, pedidoId){
   const { data: x } = await sb.from('pedido_pagamentos').select('*').eq('id', id).single(); if(!x) return;
   const box = document.getElementById('pp-area');
@@ -2091,7 +2117,8 @@ async function pedidoValoresRender(pedido, pecas){
     ${bruto+frete-liq>0.009 ? L('<span class="muted">Desconto</span>', `<span class="muted">− ${money(bruto+frete-liq)}</span>`) : ''}
     ${frete ? L('<span class="muted">Frete</span>', `<span class="muted">${money(frete)}</span>`) : ''}
     ${L('<span class="muted">Peças</span>', `<b>${money(liq)}</b>`)}
-    ${(pg||[]).map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;"><span class="muted" style="font-size:13px;flex:1;">Pago ${fmtDate(x.data)}${x.forma?' · '+escAttr(x.forma):''}${x.obs?' · '+escAttr(x.obs):''}</span><span class="muted" style="white-space:nowrap;">− ${money(x.valor)}</span><button class="btn sm ghost" style="flex:0 0 auto;width:auto;padding:4px 10px;" onclick="editarPagPedido('${x.id}','${pedido.id}')">✏️ Editar</button></div>`).join('')}
+    ${(pg||[]).length ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;"><span class="muted" style="font-size:12px;letter-spacing:1px;">PAGAMENTOS</span><button class="btn sm ghost" style="flex:0 0 auto;width:auto;padding:4px 12px;" onclick="editarPagsPedido('${pedido.id}')">✏️ Editar</button></div>` : ''}
+    ${(pg||[]).map(x=>L(`<span class="muted" style="font-size:13px;">Pago ${fmtDate(x.data)}${x.forma?' · '+escAttr(x.forma):''}${x.obs?' · '+escAttr(x.obs):''}</span>`, `<span class="muted">− ${money(x.valor)}</span>`)).join('')}
     ${liq>0 ? L(falta>0.009?'<b>Falta</b>':'<b>✅ Pago</b>', `<b style="font-size:19px;${falta>0.009?'color:var(--danger);':'color:var(--ok);'}">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:6px;padding-top:8px;') : ''}
     ${semPreco?`<div style="font-size:12px;color:var(--danger);margin-top:4px;">${semPreco} peça(s) sem preço — toque na peça para colocar</div>`:''}
     ${pedido.pag_escolha && falta>0.009?`<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg);font-size:14px;">${pedido.pag_escolha==='Pix'?'💠':pedido.pag_escolha==='Cartão'?'💳':'🧾'} Cliente quer pagar com <b>${escAttr(pedido.pag_escolha)}</b>${pedido.pag_escolha!=='Pix'?' — mande o '+(pedido.pag_escolha==='Cartão'?'link do cartão':'boleto')+' pelo WhatsApp':''}</div>`:''}
