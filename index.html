@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 22:45</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 23:15</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1989,7 +1989,7 @@ function parcHtml(pedido, parcelas, pago, falta){
     <div class="muted" style="font-size:12px;margin-top:4px;">Ao lançar cada pagamento, a parcela fica ✅ paga sozinha.</div></div>`;
 }
 function parcForm(pedidoId, falta, pago){
-  const box = document.getElementById('pp-area');
+  const box = document.getElementById('pp-area'); abrirDetPed();
   box.innerHTML = `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
     <b>📅 Combinar parcelas</b> <span class="muted" style="font-size:13px;">· total ${money(falta)}</span>
     <div class="row" style="gap:8px;"><div style="flex:1"><label>Nº de parcelas</label><input id="pc-n" type="number" min="1" max="24" value="3" oninput="parcGerar(${falta})"></div>
@@ -2058,7 +2058,7 @@ async function salvarPagPedido(pedidoId){
 }
 async function editarPagsPedido(pedidoId){
   const { data: pg } = await sb.from('pedido_pagamentos').select('*').eq('pedido_id', pedidoId).order('data');
-  const box = document.getElementById('pp-area'); if(!box) return;
+  const box = document.getElementById('pp-area'); if(!box) return; abrirDetPed();
   box.innerHTML = `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;"><b>✏️ Editar pagamentos</b>
     ${(pg||[]).map(x => `<div class="pe-row" data-id="${x.id}" style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-top:8px;">
       <div class="row" style="gap:8px;"><div style="flex:1"><label>Valor (R$)</label><input class="pe-v" inputmode="decimal" value="${String(Number(x.valor).toFixed(2)).replace('.',',')}"></div>
@@ -2105,7 +2105,8 @@ async function excluirPagPedido(id, pedidoId){
   await sb.from('pedido_pagamentos').delete().eq('id', id); abrirPedido(pedidoId);
 }
 function pedMenu(abrir){ const m = document.getElementById('ped-menu'); if(!m) return; m.style.display = (abrir===false || (abrir===undefined && m.style.display!=='none')) ? 'none' : 'block'; }
-function pagNovo(id){ pedMenu(false); const x = window._pedPag || { falta:0, forma:'' }; registrarPagPedido(id, x.falta, x.forma); if(x.obs){ const o = document.getElementById('pp-obs'); if(o) o.value = x.obs; } const a = document.getElementById('pp-area'); if(a) setTimeout(() => a.scrollIntoView({ behavior:'smooth', block:'center' }), 50); }
+function abrirDetPed(){ const d = document.getElementById('ped-det'); if(d) d.open = true; }
+function pagNovo(id){ pedMenu(false); abrirDetPed(); const x = window._pedPag || { falta:0, forma:'' }; registrarPagPedido(id, x.falta, x.forma); if(x.obs){ const o = document.getElementById('pp-obs'); if(o) o.value = x.obs; } const a = document.getElementById('pp-area'); if(a) setTimeout(() => a.scrollIntoView({ behavior:'smooth', block:'center' }), 50); }
 async function pedidoValoresRender(pedido, pecas){
   const div = document.getElementById('pedido-valores'); if(!div) return;
   const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), frete = Number(pedido.frete)||0, liq = pecas.reduce((s,p)=>s+vendaLinha(p),0) + frete;
@@ -2147,7 +2148,7 @@ function entregaHtml(p){
 async function entregaForm(id, tipo){
   const { data: p } = await sb.from('pedidos').select('*').eq('id', id).single();
   const div = document.getElementById('pedido-entrega'); if(!div || !p) return;
-  div.style.display = ''; setTimeout(() => div.scrollIntoView({ behavior:'smooth', block:'center' }), 50);
+  abrirDetPed(); div.style.display = ''; setTimeout(() => div.scrollIntoView({ behavior:'smooth', block:'center' }), 50);
   const env = tipo === 'enviado';
   div.innerHTML = `<strong>${env?'🚚 Enviar pedido':'🤝 Entregue em mãos'}</strong>
     ${env?`<label>Como vai</label><select id="en-transp">${TRANSPORTADORAS.map(t=>`<option ${t===p.transportadora?'selected':''}>${t}</option>`).join('')}</select>
@@ -2220,6 +2221,28 @@ async function desautorizar(id){
   if(error){ alert(error.message); return; }
   abrirPedido(id); if(state.tab==='pedidos') renderPedidos();
 }
+function pedidoResumoHtml(pedido, pecas, pgs, aut, ent, pz){
+  const linhas = [], grupos = {};
+  pecas.forEach(p => { if(p.kit_grupo){ const g = grupos[p.kit_grupo] = grupos[p.kit_grupo] || { q: p.kit_qtd||1, nome: (window._kitNome||{})[p.kit_id] || 'Conjunto', v: 0, sem: false }; g.v += vendaLinha(p); if(p.valor_venda==null) g.sem = true; }
+    else linhas.push({ q: Number(p.quantidade)||0, nome: p.fichas_tecnicas?.nome || 'Peça', v: vendaLinha(p), sem: p.valor_venda==null }); });
+  const itens = [...Object.values(grupos), ...linhas], frete = Number(pedido.frete)||0;
+  const total = itens.reduce((a,x)=>a+x.v,0) + frete, pago = pgs.reduce((a,x)=>a+Number(x.valor||0),0), falta = Math.max(0, total - pago);
+  const un = pecas.reduce((a,p)=>a+(Number(p.quantidade)||0),0), prontas = pecas.filter(p=>p.status==='pronto'||p.status==='entregue').reduce((a,p)=>a+(Number(p.quantidade)||0),0);
+  const status = !aut ? ['📝 Orçamento','rgba(201,164,104,.15)','var(--gold)'] : ent ? [`✅ Entregue${pedido.enviado_em?' em '+fmtDate(pedido.enviado_em).slice(0,5):''}`,'rgba(46,125,79,.15)','var(--ok)'] : [`🧵 Em produção · ${prontas} de ${un} prontas`,'rgba(201,164,104,.15)','var(--gold)'];
+  const R = (a,b,st) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;${st||''}">${a}${b}</div>`;
+  return `<div class="card" style="padding:16px 16px 14px;">
+    <div style="font-size:17px;font-weight:600;">${escAttr(pedido.clientes?.nome||'Sem cliente')}</div>
+    <div class="muted" style="font-size:13.5px;">${ent ? 'pedido entregue' : (pedido.urgente?'⚡ Urgente · ':'') + (pz ? `<span style="color:${pz.cor};font-weight:600;">${pz.txt}</span>` : 'sem prazo')}</div>
+    <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
+      ${itens.map(x => R(`<span style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="flex:none;min-width:44px;text-align:center;font-weight:800;color:var(--gold);background:rgba(201,164,104,.13);border-radius:8px;padding:2px 6px;">${x.q}</span><span style="min-width:0;">${escAttr(x.nome)}</span></span>`, x.sem && !x.v ? `<span style="color:var(--danger);font-size:13px;white-space:nowrap;">sem preço</span>` : `<b style="white-space:nowrap;">${money(x.v)}</b>`)).join('') || '<span class="muted">Nenhuma peça ainda.</span>'}
+      ${frete ? R('<span class="muted">Frete</span>', `<b>${money(frete)}</b>`) : ''}
+    </div>
+    ${itens.length > 1 || frete ? R('<span class="muted">Total</span>', `<b>${money(total)}</b>`, 'border-top:1px solid var(--border);margin-top:10px;padding-top:10px;') : ''}
+    ${R('<span class="muted">Pago</span>', `<b>${money(pago)}</b>`, 'margin-top:6px;')}
+    ${R(`<b style="font-size:17px;">${falta>0.009?'Falta':'✅ Pago'}</b>`, `<b style="font-size:26px;color:${falta>0.009?'var(--danger)':'var(--ok)'};">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:8px;padding-top:8px;')}
+    <span style="display:inline-block;margin-top:10px;font-size:13.5px;font-weight:600;padding:4px 12px;border-radius:12px;background:${status[1]};color:${status[2]};">${status[0]}</span>
+  </div>`;
+}
 async function abrirPedido(id){
   const { data: pedido } = await sb.from('pedidos').select('*, clientes(*)').eq('id', id).single();
   const { data: pecas } = await sb.from('pecas').select('*, fichas_tecnicas!pecas_ficha_id_fkey(nome, ficha_fotos(url,ordem))').eq('pedido_id', id).order('criado_em');
@@ -2227,19 +2250,19 @@ async function abrirPedido(id){
     if(kids.length){ const { data: ks } = await sb.from('kits').select('id,nome').in('id', kids); (ks||[]).forEach(x => window._kitNome[x.id] = x.nome); } }
   { const sids = [...new Set((pecas||[]).map(p=>p.servico_id).filter(Boolean))]; window._nivelNome = {};
     if(sids.length){ const { data: sv } = await sb.from('fichas_tecnicas').select('id,nome').in('id', sids); (sv||[]).forEach(x => window._nivelNome[x.id] = x.nome); } }
+  const { data: pgs } = await sb.from('pedido_pagamentos').select('valor').eq('pedido_id', id);
   const pz = prazoInfo(pedido.prazo), cli = pedido.clientes || {};
   const aut = !!pedido.autorizado_em, ent = !!pedido.entrega_tipo || ((pecas||[]).length > 0 && (pecas||[]).every(p => p.status==='entregue'));
   const todasProntas = (pecas||[]).length && (pecas||[]).every(p => p.status==='pronto' || p.status==='entregue');
   const st = (t, c) => `<div class="ped-st ${c}">${t}</div>`;
   showModal(`
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
-    <div style="margin-top:-6px;font-size:14px;" class="muted"><span style="color:var(--ink);font-weight:600;">${escAttr(cli.nome||'Sem cliente')}</span> · <span style="${pz&&!ent?`color:${pz.cor};font-weight:600;`:''}">${ent ? 'prazo '+(pedido.prazo?fmtDate(pedido.prazo):'—') : (pedido.urgente?'⚡ Urgente · ':'')+(pz?pz.txt:'sem prazo')}</span>${aut&&entregaModoTxt(pedido.entrega_modo)?' · '+entregaModoTxt(pedido.entrega_modo):''}</div>
-    <div class="ped-steps">${st(aut?'Orçamento ✓':'Orçamento', aut?'ok':'on')}${st(ent?'Produção ✓':'Produção', ent?'ok':(aut?'on':''))}${st(ent?'Entregue ✓':'Entrega', ent?'ok':'')}</div>
+    ${pedidoResumoHtml(pedido, pecas||[], pgs||[], aut, ent, pz)}
     <div id="aut-box" class="row" style="gap:8px;margin-top:14px;">
       ${!aut ? `<button class="btn" style="flex:1" onclick="autorizarEscolher('${id}')">✅ Autorizar produção</button>`
         : (!ent && todasProntas) ? `<button class="btn" style="flex:1" onclick="pedMenu(false); entregaForm('${id}','enviado')">🚚 Enviar</button><button class="btn" style="flex:1" onclick="pedMenu(false); entregaForm('${id}','retirada')">🤝 Em mãos</button>`
         : `<button class="btn" style="flex:1" onclick="pagNovo('${id}')">+ Pagamento</button>`}
-      <button class="btn ghost" style="flex:0 0 auto;width:auto;padding:0 14px;" onclick="enviarPedidoCliente('${id}')">🔗 Enviar</button>
+      <button class="btn ghost" style="flex:0 0 auto;width:auto;padding:0 16px;" title="Enviar link ao cliente" onclick="enviarPedidoCliente('${id}')">🔗</button>
       <button class="btn ghost" style="flex:0 0 auto;width:auto;padding:0 14px;" onclick="pedMenu()">⋯</button>
     </div>
     <div id="ped-menu" class="card" style="display:none;margin-top:8px;padding:6px 12px;">
@@ -2250,6 +2273,7 @@ async function abrirPedido(id){
       ${aut ? `<div class="item ped-mi" onclick="pedMenu(false); autorizarEscolher('${id}')">🔁 Trocar envio / buscar em mãos</div><div class="item ped-mi" onclick="desautorizar('${id}')">↩️ Voltar para orçamento</div>` : ''}
       <div class="item ped-mi" style="color:var(--danger);" onclick="excluirPedido('${id}', ${pedido.numero})">🗑️ Excluir pedido</div>
     </div>
+    <details id="ped-det" style="margin-top:12px;"><summary class="card" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;margin:0;"><span class="muted">Ver detalhes (peças, pagamentos, custos)</span><span class="muted">›</span></summary>
     <div class="ped-sec"><span>Peças · ${(pecas||[]).reduce((s,p)=>s+(Number(p.quantidade)||0),0)}</span><a href="#" onclick="event.preventDefault(); adicionarItensPedido('${id}')">+ Adicionar</a></div>
     <div id="pedido-pecas">${pedidoPecasHtml(pecas||[], id)}</div>
     <div id="pedido-valores" class="card" style="margin-top:14px;"></div>
@@ -2258,6 +2282,7 @@ async function abrirPedido(id){
       <div id="pedido-lucro" style="font-size:14px;margin-top:8px;">Calculando...</div>
       <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13.5px;">🪡 Bordados</summary><div id="pedido-bordados" class="muted">Carregando...</div></details>
       <details style="margin-top:4px;"><summary style="cursor:pointer;font-size:13.5px;">🧵 Materiais</summary><div id="pedido-materiais" class="muted">Carregando...</div></details>
+    </details>
     </details>
   `);
   materiaisDoPedido(pecas||[]);
