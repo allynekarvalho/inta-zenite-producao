@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 20:35</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 20:50</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -654,7 +654,7 @@ async function custosFichas(ids){
   const [{ data: fs }, { data: fm }, { data: fb }, { data: pt }] = await Promise.all([
     sb.from('fichas_tecnicas').select('id,revenda,custo_compra,custo_corte,servico_id').in('id', ids),
     sb.from('ficha_materiais').select('ficha_id,quantidade_por_unidade,materiais(preco,embalagem,qtd_por_embalagem)').in('ficha_id', ids),
-    sb.from('ficha_bordados').select('ficha_id,quantidade,bordado:fichas_tecnicas!ficha_bordados_bordado_id_fkey(custo_bordado)').in('ficha_id', ids),
+    sb.from('ficha_bordados').select('ficha_id,quantidade,custo,bordado:fichas_tecnicas!ficha_bordados_bordado_id_fkey(custo_bordado)').in('ficha_id', ids),
     sb.from('precos_tabela').select('ficha_id,valor,tabela')]);
   // mão de obra: Tabela 1; se o serviço só tem Tabela 2 (ex.: pastas da Leidis), usa a Tabela 2
   const mo = {}; (pt||[]).filter(r=>Number(r.tabela)===2).forEach(r => mo[r.ficha_id] = Number(r.valor)); (pt||[]).filter(r=>Number(r.tabela)===1).forEach(r => mo[r.ficha_id] = Number(r.valor));
@@ -662,7 +662,7 @@ async function custosFichas(ids){
     if(f.revenda){ out[f.id] = Number(f.custo_compra)||0; return; }
     let c = Number(f.custo_corte)||0;
     (fm||[]).filter(r=>r.ficha_id===f.id && r.materiais).forEach(r => { const cu = custoUnit(r.materiais); if(cu!=null) c += cu*Number(r.quantidade_por_unidade||0); });
-    (fb||[]).filter(r=>r.ficha_id===f.id).forEach(r => { c += (Number(r.quantidade)||0)*(Number(r.bordado&&r.bordado.custo_bordado)||0); });
+    (fb||[]).filter(r=>r.ficha_id===f.id).forEach(r => { c += (Number(r.quantidade)||0)*(r.custo!=null ? Number(r.custo) : (Number(r.bordado&&r.bordado.custo_bordado)||0)); });
     c += mo[f.servico_id||f.id] || 0;
     out[f.id] = c;
   });
@@ -1345,9 +1345,9 @@ async function abrirProduto(fichaId){
   const fotos = (f.ficha_fotos||[]).slice().sort((a,b)=>a.ordem-b.ordem);
   const [{ data: bdi }, { data: bds }] = await Promise.all([
     sb.from('fichas_tecnicas').select('id,nome,custo_bordado').eq('tipo', 'bordado').eq('ativo', true).order('nome'),
-    sb.from('ficha_bordados').select('bordado_id,quantidade').eq('ficha_id', fichaId)
+    sb.from('ficha_bordados').select('bordado_id,quantidade,custo').eq('ficha_id', fichaId)
   ]);
-  window._bdItens = bdi||[]; window._bdSel = {}; (bds||[]).forEach(r => { window._bdSel[r.bordado_id] = r.quantidade; });
+  window._bdItens = bdi||[]; window._bdSel = {}; window._bdCusto = {}; (bds||[]).forEach(r => { window._bdSel[r.bordado_id] = r.quantidade; if(r.custo!=null) window._bdCusto[r.bordado_id] = Number(r.custo); });
   showModal(`
     <h2>${f.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     <div class="card" id="epf-custo-top" style="margin-bottom:6px;"></div>
@@ -1382,10 +1382,10 @@ async function abrirProduto(fichaId){
       <button type="button" id="epf-bd-sim" class="btn ${Object.values(window._bdSel||{}).some(q=>q>0)?'gold':'ghost'}" style="flex:1" onclick="epfBordado(true)">Tem bordado</button>
     </div>
     <div id="epf-bd-box" style="display:${Object.values(window._bdSel||{}).some(q=>q>0)?'block':'none'}">
-    <div class="muted" style="font-size:12px;margin-top:-2px;">Quantos bordados de cada parte essa peça leva (0 = não leva).</div>
+    <div class="muted" style="font-size:12px;margin-top:-2px;">Custo de 1 bordado (pode mudar só para esta peça) × quantos ela leva (0 = não leva).</div>
     <div class="card" style="padding:6px 12px;">${(window._bdItens||[]).map(b=>`
       <div class="item" style="gap:8px;"><span style="flex:1">${escAttr(b.nome.replace('Bordado · ',''))}</span>
-      <span class="muted" style="font-size:12px;">${b.custo_bordado!=null?money(b.custo_bordado):'sem custo'}</span><input type="number" min="0" class="epf-bord" data-b="${b.id}" value="${(window._bdSel||{})[b.id]||0}" style="width:70px;text-align:center;" oninput="atualizarCustoProduto('epf')"></div>`).join('') || '<p class="muted">Nenhum bordado cadastrado.</p>'}</div></div>`}
+      <span class="muted" style="font-size:12px;">R$</span><input class="epf-bcusto" data-b="${b.id}" inputmode="decimal" title="custo de 1 bordado" placeholder="custo" value="${(() => { const v = (window._bdCusto||{})[b.id] ?? b.custo_bordado; return v!=null ? Number(v).toFixed(2).replace('.',',') : ''; })()}" style="width:78px;text-align:right;margin:0;" oninput="atualizarCustoProduto('epf')"><span class="muted" style="font-size:12px;">×</span><input type="number" min="0" class="epf-bord" data-b="${b.id}" value="${(window._bdSel||{})[b.id]||0}" style="width:70px;text-align:center;" oninput="atualizarCustoProduto('epf')"></div>`).join('') || '<p class="muted">Nenhum bordado cadastrado.</p>'}</div></div>`}
     <button class="btn block gold" style="margin-top:16px;" onclick="salvarEdicaoProduto('${fichaId}')">Salvar alterações</button>
     <button class="btn block ghost" style="margin-top:8px;color:var(--danger);" onclick="excluirProduto('${fichaId}')">Excluir produto</button>
     <p id="epf-msg" class="error"></p>
@@ -1433,8 +1433,10 @@ async function salvarEdicaoProduto(fichaId){
   await salvarListaMateriais('epf', fichaId);
   for(const inp of document.querySelectorAll('.epf-bord')){
     const q = Number(inp.value)||0, b = inp.dataset.b, antes = (window._bdSel||{})[b]||0;
-    if(q === antes) continue;
-    if(q > 0) await sb.from('ficha_bordados').upsert({ ficha_id: fichaId, bordado_id: b, quantidade: q }, { onConflict: 'ficha_id,bordado_id' });
+    const ci = document.querySelector(`.epf-bcusto[data-b="${b}"]`), cv = ci && ci.value.trim() !== '' ? numBR(ci.value) : null, padrao = ((window._bdItens||[]).find(x=>x.id===b)||{}).custo_bordado;
+    const custo = cv!=null && Math.abs(cv - (Number(padrao)||0)) > 0.001 ? cv : null, custoAntes = (window._bdCusto||{})[b] ?? null;
+    if(q === antes && custo === custoAntes) continue;
+    if(q > 0) await sb.from('ficha_bordados').upsert({ ficha_id: fichaId, bordado_id: b, quantidade: q, custo }, { onConflict: 'ficha_id,bordado_id' });
     else await sb.from('ficha_bordados').delete().eq('ficha_id', fichaId).eq('bordado_id', b);
   }
   const fotoInput = document.getElementById('epf-foto');
@@ -2920,7 +2922,8 @@ function custoProdutoHtml(prefix){
   if(prefix === 'epf'){
     const inps = document.querySelectorAll('.epf-bord');
     const qtdDe = (id) => { const i = [...inps].find(x => x.dataset.b === id); return i ? (Number(i.value)||0) : ((window._bdSel||{})[id]||0); };
-    (window._bdItens||[]).forEach(b => { const q = qtdDe(b.id); if(!q) return; if(b.custo_bordado==null) bordSem.push(b.nome.replace('Bordado · ','')); else bord += q*Number(b.custo_bordado); });
+    const custoDe = (b) => { const i = document.querySelector(`.epf-bcusto[data-b="${b.id}"]`); if(i) return i.value.trim()==='' ? null : numBR(i.value); const o = (window._bdCusto||{})[b.id]; return o!=null ? o : (b.custo_bordado!=null ? Number(b.custo_bordado) : null); };
+    (window._bdItens||[]).forEach(b => { const q = qtdDe(b.id); if(!q) return; const cu = custoDe(b); if(cu==null) bordSem.push(b.nome.replace('Bordado · ','')); else bord += q*cu; });
   }
   const sid = (window._pmServ||{})[prefix], pr = (window._precos||{})[sid] || {};
   const lin = (a,b,bold) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;${bold?'font-weight:700;':''}"><span>${a}</span><span>${b}</span></div>`;
