@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 20:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 18/11 20:20</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1451,7 +1451,7 @@ async function salvarEdicaoProduto(fichaId){
 async function renderPedidos(){
   const c = document.getElementById('content');
   const { data: pedidos, error } = await sb.from('pedidos')
-    .select('*, clientes(nome), pecas(id,status,valor_venda,quantidade,desconto_pct), pedido_pagamentos(valor)')
+    .select('*, clientes(nome), pecas(id,status,valor_venda,quantidade,desconto_pct), pedido_pagamentos(valor), pedido_parcelas(numero,valor,vencimento,forma,base_pago)')
     .order('criado_em', { ascending: false });
 
   let html = `<button class="btn block" onclick="abrirNovoPedido()">+ Novo pedido</button><div style="height:14px;"></div>`;
@@ -1476,8 +1476,15 @@ async function renderPedidos(){
       ${pz && pz.d <= 3 ? `<div style="font-size:13px;font-weight:600;color:${pz.cor};margin-top:2px;">${pz.txt}</div>` : ''}
       ${p.entrega_tipo?`<div style="font-size:13px;margin-top:2px;color:var(--ok);">${p.entrega_tipo==='enviado'?`🚚 Enviado${p.transportadora?' · '+escAttr(p.transportadora):''}`:'🤝 Entregue'}${p.enviado_em?' em '+fmtDate(p.enviado_em):''}</div>`:''}
       ${pagTxt?`<div style="font-size:13px;margin-top:2px;">${pagTxt}${p.pag_escolha && vf>0.009?` · quer pagar com <b>${escAttr(p.pag_escolha)}</b>`:''}</div>`:''}
+      ${(() => { const px = vf>0.009 && parcProxima(p.pedido_parcelas, vp); return px ? `<div style="font-size:13px;margin-top:2px;font-weight:600;color:${px.cor};">📅 ${px.numero}ª parcela ${money(px.valor)} · ${fmtDate(px.vencimento)} · ${px.txt.replace(/^\S+ /,'')}</div>` : ''; })()}
     </div>`;
   };
+  const alertas = pedidos.map(p => { const vt = (p.pecas||[]).reduce((s,x)=>s+vendaLinha(x),0) + (Number(p.frete)||0), vp = (p.pedido_pagamentos||[]).reduce((s,x)=>s+Number(x.valor||0),0);
+    const px = vt - vp > 0.009 && parcProxima(p.pedido_parcelas, vp); return px && px.d <= 3 ? { p, px } : null; }).filter(Boolean).sort((a,b)=>a.px.d-b.px.d);
+  if(alertas.length) html += `<div class="card" style="border:2px solid ${alertas.some(a=>a.px.d<0)?'var(--danger)':'#b7791f'};margin-bottom:12px;">
+    <b>⚠️ Parcelas para receber</b>
+    ${alertas.map(a => `<div onclick="abrirPedido('${a.p.id}')" style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <span>#${a.p.numero} · ${escAttr(a.p.clientes?.nome||'')}<br><span style="font-size:13px;color:${a.px.cor};font-weight:600;">${a.px.numero}ª parcela · ${fmtDate(a.px.vencimento)} · ${a.px.txt.replace(/^\S+ /,'')}</span></span><b style="white-space:nowrap;">${money(a.px.valor)}</b></div>`).join('')}</div>`;
   html += ativos.length ? ativos.map(cardPed).join('') : '<div class="card center muted">Nenhum pedido em aberto. 🎉</div>';
   if(entregues.length){
     const falta = entregues.reduce((s,p) => s + Math.max(0, (p.pecas||[]).reduce((a,x)=>a+vendaLinha(x),0) + (Number(p.frete)||0) - (p.pedido_pagamentos||[]).reduce((a,x)=>a+Number(x.valor||0),0)), 0);
@@ -1958,6 +1965,66 @@ async function removerKitPedido(grupo, pedidoId){
   closeModal(); abrirPedido(pedidoId);
 }
 const FORMAS_PAG = ['Pix','Dinheiro','Cartão de crédito','Cartão de débito','Boleto','Transferência'];
+// ===== Parcelas combinadas =====
+// cada parcela fica paga quando a soma dos pagamentos (depois de combinar) cobre ela, em ordem
+function parcStatus(parcelas, pago){
+  const ps = (parcelas||[]).slice().sort((a,b)=>a.numero-b.numero), base = ps.length ? Number(ps[0].base_pago)||0 : 0, efetivo = (Number(pago)||0) - base, hoje = todayISO();
+  let cum = 0;
+  return ps.map(x => { cum += Number(x.valor)||0; const paga = efetivo >= cum - 0.009, d = Math.round((new Date(x.vencimento+'T12:00') - new Date(hoje+'T12:00'))/86400000);
+    const st = paga ? 'paga' : d < 0 ? 'atrasada' : d === 0 ? 'hoje' : d <= 3 ? 'logo' : 'futura';
+    const txt = paga ? '✅ paga' : d < 0 ? `🔴 atrasada ${-d} dia${-d>1?'s':''}` : d === 0 ? '🟡 vence hoje' : `⏳ vence em ${d} dia${d>1?'s':''}`;
+    return { ...x, paga, st, d, txt, cor: paga ? 'var(--ok)' : (d < 0 ? 'var(--danger)' : (d <= 3 ? '#b7791f' : 'var(--muted)')) }; });
+}
+function parcProxima(parcelas, pago){ return parcStatus(parcelas, pago).find(x => !x.paga) || null; }
+function parcHtml(pedido, parcelas, pago, falta){
+  if(!(parcelas||[]).length) return falta > 0.009 ? `<button class="btn ghost block" style="margin-top:10px;" onclick="parcForm('${pedido.id}', ${falta.toFixed(2)}, ${pago.toFixed(2)})">📅 Combinar parcelas</button>` : '';
+  const ps = parcStatus(parcelas, pago);
+  return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;"><b>📅 Parcelas combinadas</b><a href="#" style="font-size:13px;color:var(--danger);" onclick="event.preventDefault(); parcExcluir('${pedido.id}')">apagar</a></div>
+    ${ps.map(x => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+      <span><b>${x.numero}ª</b> · ${fmtDate(x.vencimento)}${x.forma?' · '+escAttr(x.forma):''}<br><span style="font-size:12.5px;color:${x.cor};font-weight:600;">${x.txt}</span></span>
+      <b style="white-space:nowrap;${x.paga?'color:var(--ok);':''}">${money(x.valor)}</b></div>`).join('')}
+    <div class="muted" style="font-size:12px;margin-top:4px;">Ao lançar cada pagamento, a parcela fica ✅ paga sozinha.</div></div>`;
+}
+function parcForm(pedidoId, falta, pago){
+  const box = document.getElementById('pp-area');
+  box.innerHTML = `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+    <b>📅 Combinar parcelas</b> <span class="muted" style="font-size:13px;">· total ${money(falta)}</span>
+    <div class="row" style="gap:8px;"><div style="flex:1"><label>Nº de parcelas</label><input id="pc-n" type="number" min="1" max="24" value="3" oninput="parcGerar(${falta})"></div>
+      <div style="flex:1"><label>1º vencimento</label><input id="pc-d" type="date" value="${todayISO()}" onchange="parcGerar(${falta})"></div></div>
+    <div class="row" style="gap:8px;"><div style="flex:1"><label>Intervalo</label><select id="pc-int" onchange="parcGerar(${falta})"><option value="m">Todo mês</option><option value="15">A cada 15 dias</option><option value="7">Toda semana</option></select></div>
+      <div style="flex:1"><label>Forma</label><select id="pc-forma">${formasPagHtml('Pix')}</select></div></div>
+    <div id="pc-lista" style="margin-top:8px;"></div>
+    <button class="btn block gold" style="margin-top:8px;" onclick="parcSalvar('${pedidoId}', ${falta}, ${pago})">Salvar parcelas</button><p id="pc-msg" class="error"></p></div>`;
+  parcGerar(falta); setTimeout(() => box.scrollIntoView({ behavior:'smooth', block:'center' }), 50);
+}
+function parcGerar(falta){
+  const n = Math.max(1, Math.min(24, Number(document.getElementById('pc-n').value)||1)), d0 = document.getElementById('pc-d').value || todayISO(), it = document.getElementById('pc-int').value;
+  const cent = Math.round(falta*100), base = Math.floor(cent/n), resto = cent - base*n, rows = [];
+  for(let i=0;i<n;i++){
+    const dt = new Date(d0+'T12:00'); if(it==='m'){ const dia = dt.getDate(); dt.setDate(1); dt.setMonth(dt.getMonth()+i); dt.setDate(Math.min(dia, new Date(dt.getFullYear(), dt.getMonth()+1, 0).getDate())); } else dt.setDate(dt.getDate() + i*Number(it));
+    const iso = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+    rows.push({ v: (base + (i < resto ? 1 : 0))/100, d: iso });
+  }
+  document.getElementById('pc-lista').innerHTML = rows.map((r,i) => `<div class="row" style="gap:8px;align-items:center;margin-top:4px;"><b style="width:28px;">${i+1}ª</b>
+    <input class="pc-v" inputmode="decimal" value="${String(r.v.toFixed(2)).replace('.',',')}" style="flex:1;margin:0;"><input class="pc-dt" type="date" value="${r.d}" style="flex:1;margin:0;"></div>`).join('');
+}
+async function parcSalvar(pedidoId, falta, pago){
+  const vs = [...document.querySelectorAll('.pc-v')].map(i => numBR(i.value)||0), ds = [...document.querySelectorAll('.pc-dt')].map(i => i.value), msg = document.getElementById('pc-msg');
+  const soma = vs.reduce((a,b)=>a+b,0);
+  if(ds.some(d=>!d)){ msg.textContent = 'Coloque a data de todas as parcelas.'; return; }
+  if(Math.abs(soma - falta) > 0.01 && !confirm(`As parcelas somam ${money(soma)} e falta ${money(falta)}. Salvar assim mesmo?`)) return;
+  const forma = document.getElementById('pc-forma').value || null;
+  await sb.from('pedido_parcelas').delete().eq('pedido_id', pedidoId);
+  const { error } = await sb.from('pedido_parcelas').insert(vs.map((v,i) => ({ pedido_id: pedidoId, numero: i+1, valor: v, vencimento: ds[i], forma, base_pago: pago })));
+  if(error){ msg.textContent = error.message; return; }
+  abrirPedido(pedidoId); if(state.tab==='pedidos') renderPedidos();
+}
+async function parcExcluir(pedidoId){
+  if(!confirm('Apagar as parcelas combinadas deste pedido? Os pagamentos já lançados continuam.')) return;
+  await sb.from('pedido_parcelas').delete().eq('pedido_id', pedidoId);
+  abrirPedido(pedidoId); if(state.tab==='pedidos') renderPedidos();
+}
 function formasPagHtml(sel){ return `<option value="">—</option>` + FORMAS_PAG.map(f=>`<option ${f===sel?'selected':''}>${f}</option>`).join(''); }
 async function pedidoPagRender(pedido, total){
   const div = document.getElementById('pedido-pag'); if(!div) return;
@@ -1992,12 +2059,12 @@ async function excluirPagPedido(id, pedidoId){
   await sb.from('pedido_pagamentos').delete().eq('id', id); abrirPedido(pedidoId);
 }
 function pedMenu(abrir){ const m = document.getElementById('ped-menu'); if(!m) return; m.style.display = (abrir===false || (abrir===undefined && m.style.display!=='none')) ? 'none' : 'block'; }
-function pagNovo(id){ pedMenu(false); const x = window._pedPag || { falta:0, forma:'' }; registrarPagPedido(id, x.falta, x.forma); const a = document.getElementById('pp-area'); if(a) setTimeout(() => a.scrollIntoView({ behavior:'smooth', block:'center' }), 50); }
+function pagNovo(id){ pedMenu(false); const x = window._pedPag || { falta:0, forma:'' }; registrarPagPedido(id, x.falta, x.forma); if(x.obs){ const o = document.getElementById('pp-obs'); if(o) o.value = x.obs; } const a = document.getElementById('pp-area'); if(a) setTimeout(() => a.scrollIntoView({ behavior:'smooth', block:'center' }), 50); }
 async function pedidoValoresRender(pedido, pecas){
   const div = document.getElementById('pedido-valores'); if(!div) return;
   const bruto = pecas.reduce((s,p)=>s+(Number(p.valor_venda)||0)*(Number(p.quantidade)||0),0), frete = Number(pedido.frete)||0, liq = pecas.reduce((s,p)=>s+vendaLinha(p),0) + frete;
   const semPreco = pecas.filter(p=>p.valor_venda==null).length;
-  const { data: pg } = await sb.from('pedido_pagamentos').select('*').eq('pedido_id', pedido.id).order('data');
+  const [{ data: pg }, { data: parc }] = await Promise.all([sb.from('pedido_pagamentos').select('*').eq('pedido_id', pedido.id).order('data'), sb.from('pedido_parcelas').select('*').eq('pedido_id', pedido.id).order('numero')]);
   const pago = (pg||[]).reduce((s,x)=>s+Number(x.valor||0),0), falta = Math.max(0, liq - pago);
   const L = (a,b,st)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;${st||''}"><span>${a}</span><span>${b}</span></div>`;
   div.innerHTML = `
@@ -2008,8 +2075,10 @@ async function pedidoValoresRender(pedido, pecas){
     ${liq>0 ? L(falta>0.009?'<b>Falta</b>':'<b>✅ Pago</b>', `<b style="font-size:19px;${falta>0.009?'color:var(--danger);':'color:var(--ok);'}">${money(falta)}</b>`, 'border-top:1px solid var(--border);margin-top:6px;padding-top:8px;') : ''}
     ${semPreco?`<div style="font-size:12px;color:var(--danger);margin-top:4px;">${semPreco} peça(s) sem preço — toque na peça para colocar</div>`:''}
     ${pedido.pag_escolha && falta>0.009?`<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg);font-size:14px;">${pedido.pag_escolha==='Pix'?'💠':pedido.pag_escolha==='Cartão'?'💳':'🧾'} Cliente quer pagar com <b>${escAttr(pedido.pag_escolha)}</b>${pedido.pag_escolha!=='Pix'?' — mande o '+(pedido.pag_escolha==='Cartão'?'link do cartão':'boleto')+' pelo WhatsApp':''}</div>`:''}
+    ${parcHtml(pedido, parc, pago, falta)}
     <div id="pp-area"></div>`;
-  window._pedPag = { falta, forma: pedido.forma_pagamento||'' };
+  const prox = parcProxima(parc, pago);
+  window._pedPag = { falta: prox ? Math.min(falta, Number(prox.valor)) : falta, forma: (prox && prox.forma) || pedido.forma_pagamento||'', obs: prox ? `${prox.numero}ª parcela de ${(parc||[]).length}` : '' };
   custosFichas(pecas.map(p=>p.ficha_id)).then(cs => { const custo = pecas.reduce((s,p)=>s+(cs[p.ficha_id]||0)*(Number(p.quantidade)||0),0) + frete; const el = document.getElementById('pedido-lucro');
     if(el) el.innerHTML = L('Custo estimado', money(custo)) + L('<b>Lucro</b>', `<b style="color:${liq-custo>=0?'var(--ok)':'var(--danger)'};">${money(liq-custo)}</b>`) + (liq>0?`<div class="muted" style="font-size:12px;">Margem ${Math.round((liq-custo)/liq*100)}%</div>`:''); });
 }
@@ -2117,7 +2186,7 @@ async function abrirPedido(id){
   const st = (t, c) => `<div class="ped-st ${c}">${t}</div>`;
   showModal(`
     <h2>Pedido #${pedido.numero} <button class="close" onclick="closeModal()">&times;</button></h2>
-    <div style="margin-top:-6px;font-size:14px;" class="muted"><span style="color:var(--ink);font-weight:600;">${escAttr(cli.nome||'Sem cliente')}</span> · <span style="${pz?`color:${pz.cor};font-weight:600;`:''}">${pedido.urgente?'⚡ Urgente · ':''}${pz?pz.txt:'sem prazo'}</span>${aut&&entregaModoTxt(pedido.entrega_modo)?' · '+entregaModoTxt(pedido.entrega_modo):''}</div>
+    <div style="margin-top:-6px;font-size:14px;" class="muted"><span style="color:var(--ink);font-weight:600;">${escAttr(cli.nome||'Sem cliente')}</span> · <span style="${pz&&!ent?`color:${pz.cor};font-weight:600;`:''}">${ent ? 'prazo '+(pedido.prazo?fmtDate(pedido.prazo):'—') : (pedido.urgente?'⚡ Urgente · ':'')+(pz?pz.txt:'sem prazo')}</span>${aut&&entregaModoTxt(pedido.entrega_modo)?' · '+entregaModoTxt(pedido.entrega_modo):''}</div>
     <div class="ped-steps">${st(aut?'Orçamento ✓':'Orçamento', aut?'ok':'on')}${st(ent?'Produção ✓':'Produção', ent?'ok':(aut?'on':''))}${st(ent?'Entregue ✓':'Entrega', ent?'ok':'')}</div>
     <div id="aut-box" class="row" style="gap:8px;margin-top:14px;">
       ${!aut ? `<button class="btn" style="flex:1" onclick="autorizarEscolher('${id}')">✅ Autorizar produção</button>`
