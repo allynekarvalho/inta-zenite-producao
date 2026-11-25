@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 24/11 22:00</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 25/11 07:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1287,8 +1287,8 @@ function categoriaMateriaisHtml(prefix, categoria){
 function listaMateriaisHtml(prefix, outrosAviamentos){
   return `
     <h2 style="font-size:15px;margin-top:22px;">Lista de materiais</h2>
-    <p class="muted">Toque na categoria para abrir, escolha o material (fica azul) e coloque a medida usada. Pode escolher mais de um por categoria.</p>
-    ${CATEGORIAS_MATERIAL.map(cat=>categoriaMateriaisHtml(prefix, cat)).join('')}
+    <p class="muted">Toque na categoria e escolha o material. Tecidos entram pelos <b>Cortes</b> (o rolo fica só no Estoque).</p>
+    ${CATEGORIAS_MATERIAL.filter(cat=>cat!=='Tecidos e sintéticos').map(cat=>categoriaMateriaisHtml(prefix, cat)).join('')}
     <label style="margin-top:14px;">🧵 Nível de costura (o que a costureira recebe)</label>
     <select id="${prefix}-servico" onchange="window._pmServ=window._pmServ||{}; window._pmServ['${prefix}']=this.value||null; atualizarCustoProduto('${prefix}')">
       <option value="">— sem mão de obra —</option>
