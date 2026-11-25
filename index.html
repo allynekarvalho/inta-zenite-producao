@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 24/11 16:05</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 24/11 20:40</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -2569,7 +2569,8 @@ async function abrirPessoa(id){
   const fk = tabela==='costureiras' ? 'costureira_id' : 'faccionista_id';
   const { data: pessoa } = await sb.from(tabela).select('*').eq('id', id).single();
   const { data: valores } = await sb.from(valoresTabela).select('*, fichas_tecnicas(nome)').eq(fk, id);
-  const { data: fichas } = await sb.from('fichas_tecnicas').select('*').eq('ativo', true).order('nome');
+  const { data: fichas } = await sb.from('fichas_tecnicas').select('*, ficha_fotos(url,ordem)').eq('ativo', true).order('nome');
+  window._fichaFoto = {}; (fichas||[]).forEach(f => { const u = (f.ficha_fotos||[]).slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0))[0]?.url; if(u) window._fichaFoto[f.id] = u; });
   showModal(`
     <h2>${pessoa.nome} <button class="close" onclick="closeModal()">&times;</button></h2>
     <label>Nome</label><input id="ep2-nome" value="${pessoa.nome}">
@@ -2648,6 +2649,7 @@ async function abrirPessoa(id){
     </div>` : ''}
     <div id="pl-lista" style="margin-top:14px;"><p class="muted">Carregando...</p></div>
   `);
+  comboBusca('nv-ficha'); comboBusca('pl-ficha');
   window._plFichas = {}; (fichas||[]).forEach(f => { window._plFichas[f.id] = f; });
   window._plValores = {};
   if(tabela==='costureiras'){ const { data: pt } = await sb.from('precos_tabela').select('ficha_id,valor').eq('tabela', Number(pessoa.tabela)===1?1:2); (pt||[]).forEach(v=>{ window._plValores[v.ficha_id] = Number(v.valor)||0; }); }
@@ -2655,6 +2657,29 @@ async function abrirPessoa(id){
   window._plPessoaFull = pessoa; setTimeout(plSalPrev, 0);
   window._plTipo = tabela;
   plRender(id);
+}
+// transforma um <select> em campo de busca: digita o começo e aparece a lista (com foto)
+function semAcento(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function comboBusca(selId){
+  const sel = document.getElementById(selId); if(!sel || sel._combo) return; sel._combo = true;
+  const ops = [...sel.querySelectorAll('option')].filter(o => o.value).map(o => ({ v: o.value, t: o.textContent, g: o.parentElement.tagName==='OPTGROUP' ? o.parentElement.label : '', k: semAcento(o.textContent) }));
+  const wrap = document.createElement('div'); wrap.style.cssText = 'flex:1;min-width:0;';
+  const inp = document.createElement('input'); inp.type = 'search'; inp.autocomplete = 'off';
+  inp.placeholder = '🔍 ' + ((sel.querySelector('option[value=""]')||{}).textContent || 'Buscar...').replace(/\.\.\.$/,'') + ' (digite)';
+  const lista = document.createElement('div'); lista.style.cssText = 'display:none;max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-top:4px;background:var(--card, #1e2130);';
+  wrap.append(inp, lista); sel.style.display = 'none'; sel.parentNode.insertBefore(wrap, sel);
+  const mostrar = () => {
+    const ps = semAcento(inp.value).split(/\s+/).filter(Boolean);
+    const achou = ops.filter(o => ps.every(p => o.k.includes(p))).slice(0, 40);
+    lista.innerHTML = achou.map(o => { const f = (window._fichaFoto||{})[o.v];
+      return `<div data-v="${escAttr(o.v)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;">${f?`<img src="${escAttr(f)}" loading="lazy" decoding="async" style="flex:none;width:40px;height:40px;object-fit:cover;border-radius:6px;">`:'<span style="flex:none;width:40px;"></span>'}<span style="min-width:0;"><span style="display:block;">${escAttr(o.t)}</span>${o.g?`<span class="muted" style="font-size:11px;">${escAttr(o.g)}</span>`:''}</span></div>`; }).join('') || '<div class="muted" style="padding:10px;">Nada encontrado.</div>';
+    lista.style.display = 'block';
+  };
+  inp.addEventListener('input', () => { if(sel.value){ sel.value = ''; sel.dispatchEvent(new Event('change')); } mostrar(); });
+  inp.addEventListener('focus', mostrar);
+  inp.addEventListener('blur', () => setTimeout(() => { lista.style.display = 'none'; }, 200));
+  lista.addEventListener('mousedown', e => e.preventDefault());
+  lista.addEventListener('click', e => { const it = e.target.closest('[data-v]'); if(!it) return; sel.value = it.dataset.v; inp.value = (ops.find(o=>o.v===it.dataset.v)||{}).t || ''; lista.style.display = 'none'; inp.blur(); sel.dispatchEvent(new Event('change')); });
 }
 // dias de segunda a sexta do mês (AAAA-MM)
 function diasUteisMes(mes){
