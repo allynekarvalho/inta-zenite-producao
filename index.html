@@ -291,7 +291,7 @@ function renderApp(){
     <div class="wrap">
       <div class="topbar">
         <div>
-          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 24/11 21:20</span></p>
+          <p class="eyebrow">Zênite <span style="opacity:.5;font-size:10px;letter-spacing:0;">· v 24/11 21:30</span></p>
           <h1>Produção</h1>
         </div>
       </div>
@@ -1154,7 +1154,7 @@ function selecionadosMateriaisHtml(prefix, cat){
         </div>
         <button type="button" class="btn ghost sm" onclick="toggleMaterialSelecionado('${prefix}','${id}')">Remover</button>
       </div>
-      ${(()=>{ const c = (m.categoria||'')==='Orlado' && corteMedida(prefix); return c ? `<div class="muted" style="font-size:11px;">📐 ${escAttr(c.m.nome)}: 3 lados + 4 cm = ${String(c.metros).replace('.',',')} m</div>` : ''; })()}
+      ${(()=>{ const c = (m.categoria||'')==='Orlado' && corteMedida(prefix); return c ? `<div class="muted" style="font-size:11px;">📐 ${escAttr(c.txt)}${c.partes.length>1?` = ${String(c.metros).replace('.',',')} m`:''} (com 4 cm de folga)</div>` : ''; })()}
       <label style="font-size:12px;margin:2px 0 0;">Quanto usa em 1 paramento — <b>em ${m.unidade==='m'?'METROS':m.unidade==='cm'?'CENTÍMETROS':'PEÇAS'}</b></label>
       <input type="text" inputmode="decimal" placeholder="Ex: ${m.unidade==='cm'?'175':m.unidade==='m'?'1,75':'1'}" value="${qtdBruta==null?'':String(qtdBruta).replace('.',',')}" style="width:130px;" oninput="window._pmSel['${prefix}']['${id}']=this.value.trim()===''?null:(parseFloat(this.value.replace(',','.'))||0); atualizarEstoqueItem('${prefix}','${id}');">
       ${embInfo(m) ? `<label style="font-size:12px;margin:6px 0 0;">Tamanho de cada corte (opcional) — em ${m.unidade==='cm'?'CENTÍMETROS':'METROS'}</label>
@@ -1166,10 +1166,16 @@ function selecionadosMateriaisHtml(prefix, cat){
 }
 // corte com medida "LxA" (cm): fita em 3 lados = L + 2×A + 4cm de folga
 function corteMedida(prefix){
-  const sel = window._pmSel[prefix] || {};
-  for(const id in sel){ const m = materialDe(id); const r = m && !medePorMetro(m) && String(m.tamanho||m.nome||'').match(/(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)/i);
-    if(r){ const L = parseFloat(r[1].replace(',','.')), A = parseFloat(r[2].replace(',','.')); return { m, metros: Math.round((L + 2*A + 4)) / 100 }; } }
-  return null;
+  const sel = window._pmSel[prefix] || {}, partes = [];
+  for(const id in sel){ const m = materialDe(id); const txt = String(m && (m.tamanho||m.nome) || ''); const r = m && !medePorMetro(m) && txt.match(/(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)/i);
+    if(!r) continue; const L = parseFloat(r[1].replace(',','.')), A = parseFloat(r[2].replace(',','.'));
+    const tri = /tri/i.test(txt + ' ' + m.nome);
+    // retângulo: 3 lados (L + 2×A); triângulo: os 2 lados inclinados; +4 cm de folga em cada
+    const cm = (tri ? 2*Math.hypot(L/2, A) : L + 2*A) + 4;
+    partes.push({ m, tri, cm }); }
+  if(!partes.length) return null;
+  const metros = Math.round(partes.reduce((a,p)=>a+p.cm,0)) / 100;
+  return { partes, metros, txt: partes.map(p => `${p.m.nome} ${(Math.round(p.cm)/100).toFixed(2).replace('.',',')} m`).join(' + ') };
 }
 function fitaPeloCorte(prefix){
   const c = corteMedida(prefix), sel = window._pmSel[prefix] || {}; if(!c) return;
